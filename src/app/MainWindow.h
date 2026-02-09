@@ -8,11 +8,15 @@
 
 class CueListModel;
 class DisplayManager;
+class ArtnetInputService;
+class FailoverSyncService;
+class DeckLinkBridge;
 class MidiInputService;
 class NdiBridge;
 class OscServer;
 class OutputRouter;
 class PlaybackController;
+class SyphonBridge;
 class QCheckBox;
 class QComboBox;
 class QLineEdit;
@@ -68,9 +72,13 @@ class MainWindow : public QMainWindow {
   void handleExternalOverlayText(const QString& text);
   void handleExternalTake();
   void handleTimecode(const QString& timecode);
+  void handleRemoteCueLive(const QString& cueId);
+  void handleRemoteStopAll();
+  void handleRemoteOverlayText(const QString& text);
   void forwardCueToBackup(const Cue& cue);
 
   void rebuildCueHotkeys();
+  void refreshFilterPresetChoices();
   void showOutputs();
   void hideOutputs();
   void showPreview();
@@ -94,8 +102,12 @@ class MainWindow : public QMainWindow {
   OutputRouter* outputRouter_;
   PlaybackController* playbackController_;
   OscServer* oscServer_;
+  ArtnetInputService* artnetService_;
+  FailoverSyncService* failoverSync_;
   MidiInputService* midiService_;
   NdiBridge* ndiBridge_;
+  SyphonBridge* syphonBridge_;
+  DeckLinkBridge* deckLinkBridge_;
 
   QTableView* cueTable_;
   QComboBox* screenCombo_;
@@ -108,12 +120,18 @@ class MainWindow : public QMainWindow {
   QSpinBox* dmxChannelSpin_;
   QSpinBox* dmxValueSpin_;
   QCheckBox* preloadCheck_;
+  QComboBox* filterPresetCombo_;
   QLineEdit* cueFilterEdit_;
   QCheckBox* liveInputCheck_;
   QLineEdit* liveInputUrlEdit_;
   QCheckBox* cueTransitionOverrideCheck_;
   QComboBox* cueTransitionCombo_;
   QSpinBox* cueTransitionDurationSpin_;
+  QLineEdit* playlistIdEdit_;
+  QCheckBox* playlistAdvanceCheck_;
+  QCheckBox* playlistLoopCheck_;
+  QSpinBox* playlistDelaySpin_;
+  QSpinBox* autoStopSpin_;
   QCheckBox* autoFollowCheck_;
   QSpinBox* followCueRowSpin_;
   QSpinBox* followDelaySpin_;
@@ -125,20 +143,39 @@ class MainWindow : public QMainWindow {
   QSpinBox* edgeBlendSpin_;
   QSpinBox* keystoneXSpin_;
   QSpinBox* keystoneYSpin_;
+  QCheckBox* maskEnableCheck_;
+  QSpinBox* maskLeftSpin_;
+  QSpinBox* maskTopSpin_;
+  QSpinBox* maskRightSpin_;
+  QSpinBox* maskBottomSpin_;
   QLineEdit* slatePathEdit_;
 
   QSpinBox* oscPortSpin_;
   QCheckBox* relativePathCheck_;
   QCheckBox* midiEnableCheck_;
   QCheckBox* ndiEnableCheck_;
+  QCheckBox* syphonEnableCheck_;
+  QCheckBox* deckLinkEnableCheck_;
+  QLineEdit* filterPresetsEdit_;
+  QCheckBox* artnetEnableCheck_;
+  QSpinBox* artnetPortSpin_;
+  QSpinBox* artnetUniverseSpin_;
   QCheckBox* backupTriggerCheck_;
   QLineEdit* backupUrlEdit_;
   QLineEdit* backupTokenEdit_;
+  QCheckBox* failoverSyncCheck_;
+  QLineEdit* failoverHostEdit_;
+  QSpinBox* failoverPeerPortSpin_;
+  QSpinBox* failoverListenPortSpin_;
+  QLineEdit* failoverKeyEdit_;
   QLabel* statusLabel_;
   QNetworkAccessManager* backupNetwork_;
 
   bool updatingEditors_ = false;
   bool updatingCalibration_ = false;
+  bool suppressFailoverCuePublish_ = false;
+  bool suppressFailoverStopPublish_ = false;
+  bool suppressFailoverOverlayPublish_ = false;
   QString currentProjectPath_;
   AppConfig config_;
   QMap<QString, QShortcut*> cueHotkeys_;

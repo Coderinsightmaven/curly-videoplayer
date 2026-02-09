@@ -44,19 +44,30 @@ int main(int argc, char* argv[]) {
   cue.preload = true;
   cue.isLiveInput = false;
   cue.liveInputUrl = "av://camera0";
+  cue.filterPresetId = "cinema";
   cue.videoFilter = "hflip";
   cue.useTransitionOverride = true;
-  cue.transitionStyle = TransitionStyle::Cut;
+  cue.transitionStyle = TransitionStyle::WipeLeft;
   cue.transitionDurationMs = 90;
   cue.autoFollow = true;
   cue.followCueRow = 0;
   cue.followDelayMs = 250;
+  cue.playlistId = "opener";
+  cue.playlistAutoAdvance = true;
+  cue.playlistLoop = true;
+  cue.playlistAdvanceDelayMs = 1250;
+  cue.autoStopMs = 5000;
   input.cues.push_back(cue);
 
   OutputCalibration calibration;
   calibration.edgeBlendPx = 24;
   calibration.keystoneHorizontal = 6;
   calibration.keystoneVertical = -5;
+  calibration.maskEnabled = true;
+  calibration.maskLeftPx = 10;
+  calibration.maskTopPx = 20;
+  calibration.maskRightPx = 30;
+  calibration.maskBottomPx = 40;
   input.calibrations.insert(2, calibration);
 
   input.config.oscPort = 9100;
@@ -66,10 +77,22 @@ int main(int argc, char* argv[]) {
   input.config.useRelativeMediaPaths = true;
   input.config.midiEnabled = true;
   input.config.ndiEnabled = true;
+  input.config.syphonEnabled = true;
+  input.config.deckLinkEnabled = true;
   input.config.backupTriggerEnabled = true;
   input.config.backupTriggerUrl = "https://backup.local/trigger";
   input.config.backupTriggerToken = "token-abc";
   input.config.backupTriggerTimeoutMs = 1750;
+  input.config.filterPresets.insert("cinema", "eq=contrast=1.2");
+  input.config.filterPresets.insert("desat", "hue=s=0");
+  input.config.artnetEnabled = true;
+  input.config.artnetPort = 6454;
+  input.config.artnetUniverse = 3;
+  input.config.failoverSyncEnabled = true;
+  input.config.failoverPeerHost = "10.0.0.55";
+  input.config.failoverPeerPort = 9201;
+  input.config.failoverListenPort = 9200;
+  input.config.failoverSharedKey = "shared-secret";
 
   const QString projectPath = tempDir.filePath("roundtrip.show");
   QString error;
@@ -134,6 +157,9 @@ int main(int argc, char* argv[]) {
   if (!require(loadedCue.liveInputUrl == cue.liveInputUrl, "Cue liveInputUrl mismatch.")) {
     return 1;
   }
+  if (!require(loadedCue.filterPresetId == cue.filterPresetId, "Cue filterPresetId mismatch.")) {
+    return 1;
+  }
   if (!require(loadedCue.videoFilter == cue.videoFilter, "Cue videoFilter mismatch.")) {
     return 1;
   }
@@ -155,6 +181,21 @@ int main(int argc, char* argv[]) {
   if (!require(loadedCue.followDelayMs == cue.followDelayMs, "Cue followDelayMs mismatch.")) {
     return 1;
   }
+  if (!require(loadedCue.playlistId == cue.playlistId, "Cue playlistId mismatch.")) {
+    return 1;
+  }
+  if (!require(loadedCue.playlistAutoAdvance == cue.playlistAutoAdvance, "Cue playlistAutoAdvance mismatch.")) {
+    return 1;
+  }
+  if (!require(loadedCue.playlistLoop == cue.playlistLoop, "Cue playlistLoop mismatch.")) {
+    return 1;
+  }
+  if (!require(loadedCue.playlistAdvanceDelayMs == cue.playlistAdvanceDelayMs, "Cue playlistAdvanceDelayMs mismatch.")) {
+    return 1;
+  }
+  if (!require(loadedCue.autoStopMs == cue.autoStopMs, "Cue autoStopMs mismatch.")) {
+    return 1;
+  }
 
   if (!require(output.calibrations.contains(2), "Expected calibration for screen 2.")) {
     return 1;
@@ -170,6 +211,21 @@ int main(int argc, char* argv[]) {
   }
   if (!require(loadedCalibration.keystoneVertical == calibration.keystoneVertical,
                "Calibration keystoneVertical mismatch.")) {
+    return 1;
+  }
+  if (!require(loadedCalibration.maskEnabled == calibration.maskEnabled, "Calibration maskEnabled mismatch.")) {
+    return 1;
+  }
+  if (!require(loadedCalibration.maskLeftPx == calibration.maskLeftPx, "Calibration maskLeftPx mismatch.")) {
+    return 1;
+  }
+  if (!require(loadedCalibration.maskTopPx == calibration.maskTopPx, "Calibration maskTopPx mismatch.")) {
+    return 1;
+  }
+  if (!require(loadedCalibration.maskRightPx == calibration.maskRightPx, "Calibration maskRightPx mismatch.")) {
+    return 1;
+  }
+  if (!require(loadedCalibration.maskBottomPx == calibration.maskBottomPx, "Calibration maskBottomPx mismatch.")) {
     return 1;
   }
 
@@ -197,6 +253,12 @@ int main(int argc, char* argv[]) {
   if (!require(output.config.ndiEnabled == input.config.ndiEnabled, "Config ndiEnabled mismatch.")) {
     return 1;
   }
+  if (!require(output.config.syphonEnabled == input.config.syphonEnabled, "Config syphonEnabled mismatch.")) {
+    return 1;
+  }
+  if (!require(output.config.deckLinkEnabled == input.config.deckLinkEnabled, "Config deckLinkEnabled mismatch.")) {
+    return 1;
+  }
   if (!require(output.config.backupTriggerEnabled == input.config.backupTriggerEnabled,
                "Config backupTriggerEnabled mismatch.")) {
     return 1;
@@ -210,6 +272,36 @@ int main(int argc, char* argv[]) {
   }
   if (!require(output.config.backupTriggerTimeoutMs == input.config.backupTriggerTimeoutMs,
                "Config backupTriggerTimeoutMs mismatch.")) {
+    return 1;
+  }
+  if (!require(output.config.filterPresets == input.config.filterPresets, "Config filterPresets mismatch.")) {
+    return 1;
+  }
+  if (!require(output.config.artnetEnabled == input.config.artnetEnabled, "Config artnetEnabled mismatch.")) {
+    return 1;
+  }
+  if (!require(output.config.artnetPort == input.config.artnetPort, "Config artnetPort mismatch.")) {
+    return 1;
+  }
+  if (!require(output.config.artnetUniverse == input.config.artnetUniverse, "Config artnetUniverse mismatch.")) {
+    return 1;
+  }
+  if (!require(output.config.failoverSyncEnabled == input.config.failoverSyncEnabled,
+               "Config failoverSyncEnabled mismatch.")) {
+    return 1;
+  }
+  if (!require(output.config.failoverPeerHost == input.config.failoverPeerHost, "Config failoverPeerHost mismatch.")) {
+    return 1;
+  }
+  if (!require(output.config.failoverPeerPort == input.config.failoverPeerPort, "Config failoverPeerPort mismatch.")) {
+    return 1;
+  }
+  if (!require(output.config.failoverListenPort == input.config.failoverListenPort,
+               "Config failoverListenPort mismatch.")) {
+    return 1;
+  }
+  if (!require(output.config.failoverSharedKey == input.config.failoverSharedKey,
+               "Config failoverSharedKey mismatch.")) {
     return 1;
   }
 

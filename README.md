@@ -15,14 +15,19 @@ Cross-platform Qt/C++ show-control video app inspired by ProVideoPlayer workflow
   - MIDI note mapping
   - DMX channel/value trigger mapping
   - cue-level transition override
+  - transition styles (`Cut`, `Fade`, `Dip To Black`, `Wipe Left`, `Dip To White`)
   - cue filter chain (`mpv vf`)
+  - cue filter preset binding
   - live input source URL
   - auto-follow action (follow row + delay)
+  - playlist actions (playlist id, auto-advance, loop, delay)
+  - auto-stop timer
 - Program output engine:
   - multi-screen full-screen outputs
   - per-screen layered playback
   - transitions (`Cut`, `Fade`, `Dip To Black`)
   - per-screen edge blend + keystone controls
+  - per-screen output mask controls (left/top/right/bottom)
   - fallback slate on errors/stopped state
   - operator text overlay (`OSC /text`)
 - Preview/program workflow:
@@ -34,16 +39,20 @@ Cross-platform Qt/C++ show-control video app inspired by ProVideoPlayer workflow
   - relative media path mode for portable projects
 - Control inputs:
   - OSC UDP server
+  - Art-Net DMX input listener (OpDmx/universe routing)
   - MIDI input (optional RtMidi build)
   - timecode trigger routing (from OSC `/timecode` or MIDI MTC quarter-frame)
   - DMX-style trigger input via OSC `/dmx <channel> <value>`
 - Backup trigger:
   - optional HTTP POST when a cue goes live
+  - optional UDP failover sync (cue-live/stop-all/overlay replication with shared-key auth)
 - Utility workflow:
   - add color-bars test-pattern cues
   - relink missing media files in loaded projects
 - Optional NDI hook:
   - compile-time abstraction with SDK detection
+- Optional Syphon/SDI hooks:
+  - compile-time bridge toggles with SDK/header detection
 - Packaging/deployment baseline:
   - CPack config for macOS DMG and Windows ZIP/NSIS
 

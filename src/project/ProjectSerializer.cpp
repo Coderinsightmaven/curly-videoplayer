@@ -55,6 +55,7 @@ QJsonObject cueToJson(const Cue& cue, const QDir& baseDir, bool useRelativeMedia
   object.insert("preload", cue.preload);
   object.insert("isLiveInput", cue.isLiveInput);
   object.insert("liveInputUrl", cue.liveInputUrl);
+  object.insert("filterPresetId", cue.filterPresetId);
   object.insert("videoFilter", cue.videoFilter);
   object.insert("useTransitionOverride", cue.useTransitionOverride);
   object.insert("transitionStyle", transitionStyleToString(cue.transitionStyle));
@@ -62,6 +63,11 @@ QJsonObject cueToJson(const Cue& cue, const QDir& baseDir, bool useRelativeMedia
   object.insert("autoFollow", cue.autoFollow);
   object.insert("followCueRow", cue.followCueRow);
   object.insert("followDelayMs", cue.followDelayMs);
+  object.insert("playlistId", cue.playlistId);
+  object.insert("playlistAutoAdvance", cue.playlistAutoAdvance);
+  object.insert("playlistLoop", cue.playlistLoop);
+  object.insert("playlistAdvanceDelayMs", cue.playlistAdvanceDelayMs);
+  object.insert("autoStopMs", cue.autoStopMs);
   return object;
 }
 
@@ -82,6 +88,7 @@ Cue cueFromJson(const QJsonObject& object, const QDir& baseDir) {
   cue.preload = object.value("preload").toBool(false);
   cue.isLiveInput = object.value("isLiveInput").toBool(false);
   cue.liveInputUrl = object.value("liveInputUrl").toString();
+  cue.filterPresetId = object.value("filterPresetId").toString();
   cue.videoFilter = object.value("videoFilter").toString();
   cue.useTransitionOverride = object.value("useTransitionOverride").toBool(false);
   cue.transitionStyle = transitionStyleFromString(object.value("transitionStyle").toString("fade"));
@@ -89,6 +96,11 @@ Cue cueFromJson(const QJsonObject& object, const QDir& baseDir) {
   cue.autoFollow = object.value("autoFollow").toBool(false);
   cue.followCueRow = object.value("followCueRow").toInt(-1);
   cue.followDelayMs = object.value("followDelayMs").toInt(0);
+  cue.playlistId = object.value("playlistId").toString();
+  cue.playlistAutoAdvance = object.value("playlistAutoAdvance").toBool(false);
+  cue.playlistLoop = object.value("playlistLoop").toBool(false);
+  cue.playlistAdvanceDelayMs = object.value("playlistAdvanceDelayMs").toInt(0);
+  cue.autoStopMs = object.value("autoStopMs").toInt(0);
   return cue;
 }
 
@@ -98,6 +110,11 @@ QJsonObject calibrationToJson(int screenIndex, const OutputCalibration& calibrat
   object.insert("edgeBlendPx", calibration.edgeBlendPx);
   object.insert("keystoneHorizontal", calibration.keystoneHorizontal);
   object.insert("keystoneVertical", calibration.keystoneVertical);
+  object.insert("maskEnabled", calibration.maskEnabled);
+  object.insert("maskLeftPx", calibration.maskLeftPx);
+  object.insert("maskTopPx", calibration.maskTopPx);
+  object.insert("maskRightPx", calibration.maskRightPx);
+  object.insert("maskBottomPx", calibration.maskBottomPx);
   return object;
 }
 
@@ -106,6 +123,11 @@ OutputCalibration calibrationFromJson(const QJsonObject& object) {
   calibration.edgeBlendPx = object.value("edgeBlendPx").toInt(0);
   calibration.keystoneHorizontal = object.value("keystoneHorizontal").toInt(0);
   calibration.keystoneVertical = object.value("keystoneVertical").toInt(0);
+  calibration.maskEnabled = object.value("maskEnabled").toBool(false);
+  calibration.maskLeftPx = object.value("maskLeftPx").toInt(0);
+  calibration.maskTopPx = object.value("maskTopPx").toInt(0);
+  calibration.maskRightPx = object.value("maskRightPx").toInt(0);
+  calibration.maskBottomPx = object.value("maskBottomPx").toInt(0);
   return calibration;
 }
 
@@ -118,10 +140,25 @@ QJsonObject configToJson(const AppConfig& config, const QDir& baseDir) {
   object.insert("useRelativeMediaPaths", config.useRelativeMediaPaths);
   object.insert("midiEnabled", config.midiEnabled);
   object.insert("ndiEnabled", config.ndiEnabled);
+  object.insert("syphonEnabled", config.syphonEnabled);
+  object.insert("deckLinkEnabled", config.deckLinkEnabled);
   object.insert("backupTriggerEnabled", config.backupTriggerEnabled);
   object.insert("backupTriggerUrl", config.backupTriggerUrl);
   object.insert("backupTriggerToken", config.backupTriggerToken);
   object.insert("backupTriggerTimeoutMs", config.backupTriggerTimeoutMs);
+  QJsonObject filterPresets;
+  for (auto it = config.filterPresets.constBegin(); it != config.filterPresets.constEnd(); ++it) {
+    filterPresets.insert(it.key(), it.value());
+  }
+  object.insert("filterPresets", filterPresets);
+  object.insert("artnetEnabled", config.artnetEnabled);
+  object.insert("artnetPort", config.artnetPort);
+  object.insert("artnetUniverse", config.artnetUniverse);
+  object.insert("failoverSyncEnabled", config.failoverSyncEnabled);
+  object.insert("failoverPeerHost", config.failoverPeerHost);
+  object.insert("failoverPeerPort", config.failoverPeerPort);
+  object.insert("failoverListenPort", config.failoverListenPort);
+  object.insert("failoverSharedKey", config.failoverSharedKey);
   return object;
 }
 
@@ -134,10 +171,25 @@ AppConfig configFromJson(const QJsonObject& object, const QDir& baseDir) {
   config.fallbackSlatePath = toAbsolutePath(object.value("fallbackSlatePath").toString(), baseDir);
   config.midiEnabled = object.value("midiEnabled").toBool(true);
   config.ndiEnabled = object.value("ndiEnabled").toBool(false);
+  config.syphonEnabled = object.value("syphonEnabled").toBool(false);
+  config.deckLinkEnabled = object.value("deckLinkEnabled").toBool(false);
   config.backupTriggerEnabled = object.value("backupTriggerEnabled").toBool(false);
   config.backupTriggerUrl = object.value("backupTriggerUrl").toString();
   config.backupTriggerToken = object.value("backupTriggerToken").toString();
   config.backupTriggerTimeoutMs = object.value("backupTriggerTimeoutMs").toInt(1500);
+  config.filterPresets.clear();
+  const QJsonObject filterPresetsObject = object.value("filterPresets").toObject();
+  for (auto it = filterPresetsObject.constBegin(); it != filterPresetsObject.constEnd(); ++it) {
+    config.filterPresets.insert(it.key(), it.value().toString());
+  }
+  config.artnetEnabled = object.value("artnetEnabled").toBool(false);
+  config.artnetPort = object.value("artnetPort").toInt(6454);
+  config.artnetUniverse = object.value("artnetUniverse").toInt(0);
+  config.failoverSyncEnabled = object.value("failoverSyncEnabled").toBool(false);
+  config.failoverPeerHost = object.value("failoverPeerHost").toString();
+  config.failoverPeerPort = object.value("failoverPeerPort").toInt(9101);
+  config.failoverListenPort = object.value("failoverListenPort").toInt(9101);
+  config.failoverSharedKey = object.value("failoverSharedKey").toString();
   return config;
 }
 

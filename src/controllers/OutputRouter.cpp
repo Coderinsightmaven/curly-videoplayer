@@ -50,9 +50,10 @@ OutputRouter::~OutputRouter() {
 }
 
 bool OutputRouter::routeCue(const Cue& cue, TransitionStyle style, int durationMs) {
-  const QVector<int> targetScreens = resolveTargetScreens(cue, displayManager_);
+  const Cue resolvedCue = applyFilterPreset(cue);
+  const QVector<int> targetScreens = resolveTargetScreens(resolvedCue, displayManager_);
   if (targetScreens.isEmpty()) {
-    emit routingError(QString("No screens available for cue '%1'.").arg(cue.name));
+    emit routingError(QString("No screens available for cue '%1'.").arg(resolvedCue.name));
     return false;
   }
 
@@ -70,12 +71,12 @@ bool OutputRouter::routeCue(const Cue& cue, TransitionStyle style, int durationM
       continue;
     }
 
-    Cue routedCue = cue;
+    Cue routedCue = resolvedCue;
     routedCue.targetScreen = screenIndex;
     const bool ok = window->playCueWithTransition(routedCue, style, durationMs);
     if (!ok) {
       emit routingError(
-          QString("Failed to play cue '%1' on screen %2 layer %3.").arg(cue.name).arg(screenIndex).arg(cue.layer));
+          QString("Failed to play cue '%1' on screen %2 layer %3.").arg(resolvedCue.name).arg(screenIndex).arg(cue.layer));
       continue;
     }
     routedAny = true;
@@ -85,11 +86,13 @@ bool OutputRouter::routeCue(const Cue& cue, TransitionStyle style, int durationM
     return false;
   }
 
-  emit routingStatus(QString("Program: '%1' on %2 target(s) layer %3").arg(cue.name).arg(targetScreens.size()).arg(cue.layer));
+  emit routingStatus(
+      QString("Program: '%1' on %2 target(s) layer %3").arg(resolvedCue.name).arg(targetScreens.size()).arg(cue.layer));
   return true;
 }
 
 bool OutputRouter::previewCue(const Cue& cue) {
+  const Cue resolvedCue = applyFilterPreset(cue);
   PreviewWindow* window = ensurePreviewWindow();
   if (window == nullptr) {
     emit routingError("Preview window is unavailable.");
@@ -99,21 +102,22 @@ bool OutputRouter::previewCue(const Cue& cue) {
   window->show();
   window->raise();
 
-  const bool ok = window->previewCue(cue);
+  const bool ok = window->previewCue(resolvedCue);
   if (!ok) {
-    emit routingError(QString("Failed to preview cue '%1'.").arg(cue.name));
+    emit routingError(QString("Failed to preview cue '%1'.").arg(resolvedCue.name));
     return false;
   }
 
-  previewCue_ = cue;
-  emit routingStatus(QString("Preview: '%1'").arg(cue.name));
+  previewCue_ = resolvedCue;
+  emit routingStatus(QString("Preview: '%1'").arg(resolvedCue.name));
   return true;
 }
 
 bool OutputRouter::preloadCue(const Cue& cue) {
-  const QVector<int> targetScreens = resolveTargetScreens(cue, displayManager_);
+  const Cue resolvedCue = applyFilterPreset(cue);
+  const QVector<int> targetScreens = resolveTargetScreens(resolvedCue, displayManager_);
   if (targetScreens.isEmpty()) {
-    emit routingError(QString("No screens available for preload cue '%1'.").arg(cue.name));
+    emit routingError(QString("No screens available for preload cue '%1'.").arg(resolvedCue.name));
     return false;
   }
 
@@ -130,11 +134,11 @@ bool OutputRouter::preloadCue(const Cue& cue) {
       continue;
     }
 
-    Cue routedCue = cue;
+    Cue routedCue = resolvedCue;
     routedCue.targetScreen = screenIndex;
     const bool ok = window->preloadCue(routedCue);
     if (!ok) {
-      emit routingError(QString("Failed to preload cue '%1' on screen %2.").arg(cue.name).arg(screenIndex));
+      emit routingError(QString("Failed to preload cue '%1' on screen %2.").arg(resolvedCue.name).arg(screenIndex));
       continue;
     }
     preloadedAny = true;
@@ -144,7 +148,7 @@ bool OutputRouter::preloadCue(const Cue& cue) {
     return false;
   }
 
-  emit routingStatus(QString("Preloaded: '%1'").arg(cue.name));
+  emit routingStatus(QString("Preloaded: '%1'").arg(resolvedCue.name));
   return true;
 }
 
@@ -256,6 +260,25 @@ void OutputRouter::setFallbackSlatePath(const QString& path) {
   for (auto it = windows_.begin(); it != windows_.end(); ++it) {
     it.value()->setFallbackSlatePath(path);
   }
+}
+
+void OutputRouter::setFilterPresets(const QMap<QString, QString>& presets) { filterPresets_ = presets; }
+
+Cue OutputRouter::applyFilterPreset(const Cue& cue) {
+  Cue resolvedCue = cue;
+  const QString presetId = cue.filterPresetId.trimmed();
+  if (presetId.isEmpty()) {
+    return resolvedCue;
+  }
+
+  const QString presetFilter = filterPresets_.value(presetId).trimmed();
+  if (presetFilter.isEmpty()) {
+    return resolvedCue;
+  }
+
+  const QString cueFilter = cue.videoFilter.trimmed();
+  resolvedCue.videoFilter = cueFilter.isEmpty() ? presetFilter : QString("%1,%2").arg(presetFilter, cueFilter);
+  return resolvedCue;
 }
 
 OutputWindow* OutputRouter::ensureWindow(int screenIndex) {

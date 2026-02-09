@@ -40,12 +40,14 @@ class OutputRouter : public QObject {
   QMap<int, OutputCalibration> calibrations() const;
 
   void setFallbackSlatePath(const QString& path);
+  void setFilterPresets(const QMap<QString, QString>& presets);
 
  signals:
   void routingError(const QString& message);
   void routingStatus(const QString& message);
 
  private:
+  Cue applyFilterPreset(const Cue& cue);
   OutputWindow* ensureWindow(int screenIndex);
   PreviewWindow* ensurePreviewWindow();
 
@@ -54,6 +56,7 @@ class OutputRouter : public QObject {
   PreviewWindow* previewWindow_ = nullptr;
   Cue previewCue_;
   QMap<int, OutputCalibration> calibrations_;
+  QMap<QString, QString> filterPresets_;
   QString fallbackSlatePath_;
   QString overlayText_;
 };

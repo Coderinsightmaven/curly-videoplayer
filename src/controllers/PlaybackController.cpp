@@ -39,6 +39,7 @@ bool PlaybackController::playCueAtRow(int row, TransitionStyle style, int durati
   emit playbackStatus(QString("Live: '%1'").arg(cue.name));
   emit cueWentLive(cue);
   scheduleFollowCue(cue, effectiveStyle, effectiveDuration);
+  scheduleAutoStop(cue);
   return true;
 }
 
@@ -115,6 +116,7 @@ bool PlaybackController::takePreviewCue(TransitionStyle style, int durationMs) {
   emit playbackStatus(QString("Taken live: '%1'").arg(previewCue.name));
   emit cueWentLive(previewCue);
   scheduleFollowCue(previewCue, effectiveStyle, effectiveDuration);
+  scheduleAutoStop(previewCue);
   return true;
 }
 
@@ -163,6 +165,7 @@ bool PlaybackController::triggerByTimecode(const QString& timecode, TransitionSt
         emit playbackStatus(QString("Timecode %1 -> '%2'").arg(normalizedTimecode).arg(cue.name));
         emit cueWentLive(cue);
         scheduleFollowCue(cue, effectiveStyle, effectiveDuration);
+        scheduleAutoStop(cue);
         triggered = true;
       }
     } else {
@@ -250,15 +253,70 @@ bool PlaybackController::cueMatchesTimecode(const QString& cueTrigger, const QSt
 }
 
 void PlaybackController::scheduleFollowCue(const Cue& cue, TransitionStyle style, int durationMs) {
-  if (cueModel_ == nullptr || !cue.autoFollow) {
+  if (cueModel_ == nullptr) {
     return;
   }
 
-  const int followRow = cue.followCueRow >= 0 ? cue.followCueRow : cueModel_->rowForCueId(cue.id) + 1;
-  if (!cueModel_->isValidRow(followRow)) {
+  if (cue.autoFollow) {
+    const int followRow = cue.followCueRow >= 0 ? cue.followCueRow : cueModel_->rowForCueId(cue.id) + 1;
+    if (!cueModel_->isValidRow(followRow)) {
+      return;
+    }
+
+    const int delayMs = qMax(0, cue.followDelayMs);
+    QTimer::singleShot(delayMs, this, [this, followRow, style, durationMs]() { playCueAtRow(followRow, style, durationMs); });
     return;
   }
 
-  const int delayMs = qMax(0, cue.followDelayMs);
-  QTimer::singleShot(delayMs, this, [this, followRow, style, durationMs]() { playCueAtRow(followRow, style, durationMs); });
+  schedulePlaylistAdvance(cue, style, durationMs);
+}
+
+void PlaybackController::schedulePlaylistAdvance(const Cue& cue, TransitionStyle style, int durationMs) {
+  if (cueModel_ == nullptr || !cue.playlistAutoAdvance || cue.playlistId.trimmed().isEmpty()) {
+    return;
+  }
+
+  const QString playlistId = cue.playlistId.trimmed();
+  const QVector<Cue> cues = cueModel_->cues();
+
+  const int currentRow = cueModel_->rowForCueId(cue.id);
+  if (currentRow < 0) {
+    return;
+  }
+
+  int nextRow = -1;
+  for (int i = currentRow + 1; i < cues.size(); ++i) {
+    if (cues.at(i).playlistId.trimmed() == playlistId) {
+      nextRow = i;
+      break;
+    }
+  }
+
+  if (nextRow < 0 && cue.playlistLoop) {
+    for (int i = 0; i < cues.size(); ++i) {
+      if (i == currentRow) {
+        continue;
+      }
+      if (cues.at(i).playlistId.trimmed() == playlistId) {
+        nextRow = i;
+        break;
+      }
+    }
+  }
+
+  if (!cueModel_->isValidRow(nextRow)) {
+    return;
+  }
+
+  const int delayMs = qMax(0, cue.playlistAdvanceDelayMs);
+  QTimer::singleShot(delayMs, this, [this, nextRow, style, durationMs]() { playCueAtRow(nextRow, style, durationMs); });
+}
+
+void PlaybackController::scheduleAutoStop(const Cue& cue) {
+  if (outputRouter_ == nullptr || cue.autoStopMs <= 0) {
+    return;
+  }
+
+  const int delayMs = qMax(0, cue.autoStopMs);
+  QTimer::singleShot(delayMs, this, [this, cue]() { outputRouter_->stopCue(cue); });
 }

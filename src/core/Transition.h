@@ -7,6 +7,8 @@ enum class TransitionStyle {
   Cut = 0,
   Fade = 1,
   DipToBlack = 2,
+  WipeLeft = 3,
+  DipToWhite = 4,
 };
 
 inline QString transitionStyleToString(TransitionStyle style) {
@@ -17,6 +19,10 @@ inline QString transitionStyleToString(TransitionStyle style) {
       return "fade";
     case TransitionStyle::DipToBlack:
       return "dip_to_black";
+    case TransitionStyle::WipeLeft:
+      return "wipe_left";
+    case TransitionStyle::DipToWhite:
+      return "dip_to_white";
     default:
       return "cut";
   }
@@ -29,6 +35,12 @@ inline TransitionStyle transitionStyleFromString(const QString& value) {
   }
   if (normalized == "dip_to_black") {
     return TransitionStyle::DipToBlack;
+  }
+  if (normalized == "wipe_left") {
+    return TransitionStyle::WipeLeft;
+  }
+  if (normalized == "dip_to_white") {
+    return TransitionStyle::DipToWhite;
   }
   return TransitionStyle::Cut;
 }

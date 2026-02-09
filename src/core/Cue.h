@@ -20,6 +20,7 @@ struct Cue {
   bool preload = false;
   bool isLiveInput = false;
   QString liveInputUrl;
+  QString filterPresetId;
   QString videoFilter;
   bool useTransitionOverride = false;
   TransitionStyle transitionStyle = TransitionStyle::Fade;
@@ -27,4 +28,9 @@ struct Cue {
   bool autoFollow = false;
   int followCueRow = -1;
   int followDelayMs = 0;
+  QString playlistId;
+  bool playlistAutoAdvance = false;
+  bool playlistLoop = false;
+  int playlistAdvanceDelayMs = 0;
+  int autoStopMs = 0;
 };

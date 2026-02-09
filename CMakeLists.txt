@@ -91,6 +91,14 @@ if(NDI_INCLUDE_DIR AND NDI_LIBRARY)
   set(NDI_TARGET ndi::ndi)
 endif()
 
+set(SYPHON_INCLUDE_DIR "")
+if(APPLE)
+  find_path(SYPHON_INCLUDE_DIR Syphon/Syphon.h)
+endif()
+
+set(DECKLINK_INCLUDE_DIR "")
+find_path(DECKLINK_INCLUDE_DIR DeckLinkAPI.h)
+
 set(SOURCES
   src/main.cpp
   src/app/MainWindow.cpp
@@ -102,9 +110,13 @@ set(SOURCES
   src/output/LayerSurface.cpp
   src/output/PreviewWindow.cpp
   src/output/EdgeBlendOverlay.cpp
+  src/output/SyphonBridge.cpp
+  src/output/DeckLinkBridge.cpp
   src/player/MpvPlayer.cpp
   src/project/ProjectSerializer.cpp
   src/control/OscServer.cpp
+  src/control/ArtnetInputService.cpp
+  src/control/FailoverSyncService.cpp
   src/control/MidiInputService.cpp
   src/ndi/NdiBridge.cpp
 )
@@ -122,11 +134,15 @@ set(HEADERS
   src/output/LayerSurface.h
   src/output/PreviewWindow.h
   src/output/EdgeBlendOverlay.h
+  src/output/SyphonBridge.h
+  src/output/DeckLinkBridge.h
   src/output/OutputCalibration.h
   src/player/IPlayer.h
   src/player/MpvPlayer.h
   src/project/ProjectSerializer.h
   src/control/OscServer.h
+  src/control/ArtnetInputService.h
+  src/control/FailoverSyncService.h
   src/control/MidiInputService.h
   src/ndi/NdiBridge.h
 )
@@ -156,6 +172,14 @@ endif()
 if(NDI_TARGET)
   target_link_libraries(VideoPlayerForMe PRIVATE ${NDI_TARGET})
   target_compile_definitions(VideoPlayerForMe PRIVATE HAVE_NDI_SDK)
+endif()
+
+if(SYPHON_INCLUDE_DIR)
+  target_compile_definitions(VideoPlayerForMe PRIVATE HAVE_SYPHON_SDK)
+endif()
+
+if(DECKLINK_INCLUDE_DIR)
+  target_compile_definitions(VideoPlayerForMe PRIVATE HAVE_DECKLINK_SDK)
 endif()
 
 if(WIN32)

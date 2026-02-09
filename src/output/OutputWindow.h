@@ -40,7 +40,8 @@ class OutputWindow : public QWidget {
  private:
   void showSlate(const QString& message = QString());
   void hideSlate();
-  void runFade(double from, double to, int durationMs);
+  void runFade(double from, double to, int durationMs, const QString& colorCss = "black");
+  void runWipeReveal(int durationMs);
 
   LayerSurface* surface_;
   EdgeBlendOverlay* edgeBlendOverlay_;

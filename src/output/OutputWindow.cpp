@@ -85,18 +85,31 @@ bool OutputWindow::playCueWithTransition(const Cue& cue, TransitionStyle style, 
     return playCue(cue);
   }
 
+  if (style == TransitionStyle::WipeLeft) {
+    fadeOverlay_->setStyleSheet("background: black;");
+    fadeEffect_->setOpacity(1.0);
+    fadeOverlay_->show();
+    fadeOverlay_->raise();
+
+    const bool ok = playCue(cue);
+    runWipeReveal(qMax(120, durationMs));
+    fadeOverlay_->hide();
+    return ok;
+  }
+
   const int fadeDuration = qMax(60, durationMs);
-  runFade(0.0, 1.0, fadeDuration / 2);
+  const QString dipColor = style == TransitionStyle::DipToWhite ? "white" : "black";
+  runFade(0.0, 1.0, fadeDuration / 2, dipColor);
 
   const bool ok = playCue(cue);
 
-  if (style == TransitionStyle::DipToBlack) {
+  if (style == TransitionStyle::DipToBlack || style == TransitionStyle::DipToWhite) {
     QEventLoop holdLoop;
     QTimer::singleShot(100, &holdLoop, &QEventLoop::quit);
     holdLoop.exec();
   }
 
-  runFade(1.0, 0.0, fadeDuration / 2);
+  runFade(1.0, 0.0, fadeDuration / 2, dipColor);
   return ok;
 }
 
@@ -112,6 +125,8 @@ void OutputWindow::stopAll() {
 void OutputWindow::setCalibration(const OutputCalibration& calibration) {
   calibration_ = calibration;
   edgeBlendOverlay_->setBlendSize(calibration.edgeBlendPx);
+  edgeBlendOverlay_->setMask(calibration.maskEnabled, calibration.maskLeftPx, calibration.maskTopPx, calibration.maskRightPx,
+                             calibration.maskBottomPx);
   surface_->setCalibration(calibration);
 }
 
@@ -170,7 +185,8 @@ void OutputWindow::showSlate(const QString& message) {
 
 void OutputWindow::hideSlate() { slateLabel_->hide(); }
 
-void OutputWindow::runFade(double from, double to, int durationMs) {
+void OutputWindow::runFade(double from, double to, int durationMs, const QString& colorCss) {
+  fadeOverlay_->setStyleSheet(QString("background: %1;").arg(colorCss));
   fadeOverlay_->show();
   fadeOverlay_->raise();
 
@@ -187,4 +203,18 @@ void OutputWindow::runFade(double from, double to, int durationMs) {
   if (to <= 0.01) {
     fadeOverlay_->hide();
   }
+}
+
+void OutputWindow::runWipeReveal(int durationMs) {
+  auto* animation = new QPropertyAnimation(fadeOverlay_, "geometry", this);
+  animation->setDuration(durationMs);
+  animation->setStartValue(rect());
+  animation->setEndValue(QRect(width(), 0, width(), height()));
+
+  QEventLoop loop;
+  connect(animation, &QPropertyAnimation::finished, &loop, &QEventLoop::quit);
+  animation->start(QAbstractAnimation::DeleteWhenStopped);
+  loop.exec();
+
+  fadeOverlay_->setGeometry(rect());
 }

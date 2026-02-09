@@ -35,6 +35,8 @@ class PlaybackController : public QObject {
   static QString normalizeTimecode(const QString& rawTimecode);
   static bool cueMatchesTimecode(const QString& cueTrigger, const QString& normalizedTimecode);
   void scheduleFollowCue(const Cue& cue, TransitionStyle style, int durationMs);
+  void schedulePlaylistAdvance(const Cue& cue, TransitionStyle style, int durationMs);
+  void scheduleAutoStop(const Cue& cue);
 
   CueListModel* cueModel_;
   OutputRouter* outputRouter_;
