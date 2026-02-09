@@ -192,12 +192,27 @@ bool OscServer::parseTextCommand(const QByteArray& datagram, OscMessage* message
       command = "/cue/stop_all";
     } else if (command == "timecode") {
       command = "/timecode";
+    } else if (command == "dmx") {
+      command = "/dmx";
+    } else if (command == "text") {
+      command = "/text";
     } else {
       return false;
     }
   }
 
   parsed.address = command;
+
+  if (parsed.address == "/text") {
+    OscArgument arg;
+    arg.type = OscArgument::Type::String;
+    arg.stringValue = parts.mid(1).join(' ');
+    if (!arg.stringValue.isNull()) {
+      parsed.args.push_back(arg);
+    }
+    *message = parsed;
+    return true;
+  }
 
   for (int i = 1; i < parts.size(); ++i) {
     const QString token = parts.at(i);
@@ -267,6 +282,27 @@ void OscServer::dispatch(const OscMessage& message) {
       } else if (message.args.first().type == OscArgument::Type::Int) {
         emit timecodeReceived(QString::number(message.args.first().intValue));
       }
+    }
+    return;
+  }
+
+  if (message.address == "/dmx") {
+    if (message.args.size() >= 2 && message.args.at(0).type == OscArgument::Type::Int &&
+        message.args.at(1).type == OscArgument::Type::Int) {
+      emit dmxValueReceived(message.args.at(0).intValue, message.args.at(1).intValue);
+    }
+    return;
+  }
+
+  if (message.address == "/text" || message.address == "/overlay/text") {
+    if (!message.args.isEmpty()) {
+      if (message.args.first().type == OscArgument::Type::String) {
+        emit overlayTextReceived(message.args.first().stringValue);
+      } else if (message.args.first().type == OscArgument::Type::Int) {
+        emit overlayTextReceived(QString::number(message.args.first().intValue));
+      }
+    } else {
+      emit overlayTextReceived(QString());
     }
     return;
   }

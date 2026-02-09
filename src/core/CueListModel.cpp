@@ -30,6 +30,9 @@ QVariant CueListModel::data(const QModelIndex& index, int role) const {
       case NameColumn:
         return cue.name;
       case FileColumn:
+        if (cue.isLiveInput && !cue.liveInputUrl.trimmed().isEmpty()) {
+          return QString("[Live] %1").arg(cue.liveInputUrl);
+        }
         return QFileInfo(cue.filePath).fileName();
       case ScreenColumn:
         return cue.targetScreen;
@@ -49,6 +52,9 @@ QVariant CueListModel::data(const QModelIndex& index, int role) const {
   }
 
   if (role == Qt::ToolTipRole && index.column() == FileColumn) {
+    if (cue.isLiveInput && !cue.liveInputUrl.trimmed().isEmpty()) {
+      return cue.liveInputUrl;
+    }
     return cue.filePath;
   }
 

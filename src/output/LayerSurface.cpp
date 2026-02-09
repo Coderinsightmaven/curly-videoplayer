@@ -64,9 +64,15 @@ bool LayerSurface::playCue(const Cue& cue) {
     return false;
   }
 
-  applyFilterToPlayer(player);
+  cueFilters_.insert(cue.layer, cue.videoFilter.trimmed());
+  applyFilterToPlayer(player, cue.layer);
 
-  if (!player->load(cue.filePath, cue.loop, false)) {
+  QString sourcePath = cue.filePath;
+  if (cue.isLiveInput && !cue.liveInputUrl.trimmed().isEmpty()) {
+    sourcePath = cue.liveInputUrl.trimmed();
+  }
+
+  if (!player->load(sourcePath, cue.loop, false)) {
     emit playbackError(QString("Failed to load cue '%1'.").arg(cue.name));
     return false;
   }
@@ -81,9 +87,15 @@ bool LayerSurface::preloadCue(const Cue& cue) {
     return false;
   }
 
-  applyFilterToPlayer(player);
+  cueFilters_.insert(cue.layer, cue.videoFilter.trimmed());
+  applyFilterToPlayer(player, cue.layer);
 
-  if (!player->load(cue.filePath, cue.loop, true)) {
+  QString sourcePath = cue.filePath;
+  if (cue.isLiveInput && !cue.liveInputUrl.trimmed().isEmpty()) {
+    sourcePath = cue.liveInputUrl.trimmed();
+  }
+
+  if (!player->load(sourcePath, cue.loop, true)) {
     emit playbackError(QString("Failed to preload cue '%1'.").arg(cue.name));
     return false;
   }
@@ -95,10 +107,12 @@ void LayerSurface::stopLayer(int layer) {
   if (!layers_.contains(layer)) {
     return;
   }
+  cueFilters_.remove(layer);
   layers_.value(layer)->stop();
 }
 
 void LayerSurface::stopAll() {
+  cueFilters_.clear();
   for (auto it = layers_.begin(); it != layers_.end(); ++it) {
     it.value()->stop();
   }
@@ -108,7 +122,7 @@ void LayerSurface::setCalibration(const OutputCalibration& calibration) {
   calibration_ = calibration;
 
   for (auto it = layers_.begin(); it != layers_.end(); ++it) {
-    applyFilterToPlayer(it.value());
+    applyFilterToPlayer(it.value(), it.key());
   }
 }
 
@@ -122,7 +136,7 @@ void LayerSurface::resizeEvent(QResizeEvent* event) {
     if (view != nullptr) {
       view->setGeometry(rect());
     }
-    applyFilterToPlayer(it.value());
+    applyFilterToPlayer(it.value(), it.key());
   }
 }
 
@@ -159,15 +173,29 @@ IPlayer* LayerSurface::ensurePlayerForLayer(int layer) {
   });
 
   layers_.insert(layer, player);
-  applyFilterToPlayer(player);
+  applyFilterToPlayer(player, layer);
   return player;
 }
 
 QString LayerSurface::buildKeystoneFilter() const { return perspectiveFilterFromCalibration(size(), calibration_); }
 
-void LayerSurface::applyFilterToPlayer(IPlayer* player) {
+QString LayerSurface::buildMergedFilterForLayer(int layer) const {
+  const QString keystoneFilter = buildKeystoneFilter();
+  const QString cueFilter = cueFilters_.value(layer).trimmed();
+
+  if (keystoneFilter.isEmpty()) {
+    return cueFilter;
+  }
+  if (cueFilter.isEmpty()) {
+    return keystoneFilter;
+  }
+
+  return QString("%1,%2").arg(keystoneFilter, cueFilter);
+}
+
+void LayerSurface::applyFilterToPlayer(IPlayer* player, int layer) {
   if (player == nullptr) {
     return;
   }
-  player->setVideoFilter(buildKeystoneFilter());
+  player->setVideoFilter(buildMergedFilterForLayer(layer));
 }

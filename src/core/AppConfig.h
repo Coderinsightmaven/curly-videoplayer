@@ -9,6 +9,11 @@ struct AppConfig {
   int transitionDurationMs = 600;
   TransitionStyle transitionStyle = TransitionStyle::Fade;
   QString fallbackSlatePath;
+  bool useRelativeMediaPaths = true;
   bool midiEnabled = true;
   bool ndiEnabled = false;
+  bool backupTriggerEnabled = false;
+  QString backupTriggerUrl;
+  QString backupTriggerToken;
+  int backupTriggerTimeoutMs = 1500;
 };

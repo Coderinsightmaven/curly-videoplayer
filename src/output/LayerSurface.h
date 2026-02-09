@@ -24,15 +24,17 @@ class LayerSurface : public QWidget {
  signals:
   void playbackError(const QString& message);
 
- protected:
+  protected:
   void resizeEvent(QResizeEvent* event) override;
   void paintEvent(QPaintEvent* event) override;
 
  private:
   IPlayer* ensurePlayerForLayer(int layer);
   QString buildKeystoneFilter() const;
-  void applyFilterToPlayer(IPlayer* player);
+  QString buildMergedFilterForLayer(int layer) const;
+  void applyFilterToPlayer(IPlayer* player, int layer);
 
   QMap<int, IPlayer*> layers_;
+  QMap<int, QString> cueFilters_;
   OutputCalibration calibration_;
 };

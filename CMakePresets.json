@@ -1,0 +1,59 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 21,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "dev-debug",
+      "displayName": "Dev Debug",
+      "description": "Debug build with tests and strict warnings.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/dev-debug-ninja",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BUILD_TESTING": "ON",
+        "VPFM_ENABLE_STRICT_WARNINGS": "ON",
+        "VPFM_ENABLE_SANITIZERS": "OFF"
+      }
+    },
+    {
+      "name": "sanitizer-debug",
+      "displayName": "Sanitizer Debug",
+      "description": "Debug build with ASan+UBSan enabled.",
+      "inherits": "dev-debug",
+      "binaryDir": "${sourceDir}/build/sanitizer-debug-ninja",
+      "cacheVariables": {
+        "VPFM_ENABLE_SANITIZERS": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "dev-debug",
+      "configurePreset": "dev-debug"
+    },
+    {
+      "name": "sanitizer-debug",
+      "configurePreset": "sanitizer-debug"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "dev-debug",
+      "configurePreset": "dev-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "sanitizer-debug",
+      "configurePreset": "sanitizer-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

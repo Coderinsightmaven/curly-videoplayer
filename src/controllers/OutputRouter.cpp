@@ -1,10 +1,43 @@
 #include "controllers/OutputRouter.h"
 
+#include <QSet>
 #include <QScreen>
 
 #include "display/DisplayManager.h"
 #include "output/OutputWindow.h"
 #include "output/PreviewWindow.h"
+
+namespace {
+
+QVector<int> resolveTargetScreens(const Cue& cue, DisplayManager* displayManager) {
+  if (displayManager == nullptr) {
+    return {cue.targetScreen};
+  }
+
+  const QVector<DisplayTarget> displays = displayManager->displays();
+  if (cue.targetSetId == "all-screens") {
+    QVector<int> all;
+    all.reserve(displays.size());
+    for (const DisplayTarget& display : displays) {
+      all.push_back(display.index);
+    }
+    if (!all.isEmpty()) {
+      return all;
+    }
+  }
+
+  if (cue.targetSetId.startsWith("screen-")) {
+    bool ok = false;
+    const int index = cue.targetSetId.mid(QString("screen-").size()).toInt(&ok);
+    if (ok) {
+      return {index};
+    }
+  }
+
+  return {cue.targetScreen};
+}
+
+}  // namespace
 
 OutputRouter::OutputRouter(DisplayManager* displayManager, QObject* parent)
     : QObject(parent), displayManager_(displayManager) {}
@@ -17,19 +50,42 @@ OutputRouter::~OutputRouter() {
 }
 
 bool OutputRouter::routeCue(const Cue& cue, TransitionStyle style, int durationMs) {
-  OutputWindow* window = ensureWindow(cue.targetScreen);
-  if (window == nullptr) {
+  const QVector<int> targetScreens = resolveTargetScreens(cue, displayManager_);
+  if (targetScreens.isEmpty()) {
+    emit routingError(QString("No screens available for cue '%1'.").arg(cue.name));
     return false;
   }
 
-  const bool ok = window->playCueWithTransition(cue, style, durationMs);
-  if (!ok) {
-    emit routingError(
-        QString("Failed to play cue '%1' on screen %2 layer %3.").arg(cue.name).arg(cue.targetScreen).arg(cue.layer));
+  bool routedAny = false;
+  QSet<int> attempted;
+
+  for (int screenIndex : targetScreens) {
+    if (attempted.contains(screenIndex)) {
+      continue;
+    }
+    attempted.insert(screenIndex);
+
+    OutputWindow* window = ensureWindow(screenIndex);
+    if (window == nullptr) {
+      continue;
+    }
+
+    Cue routedCue = cue;
+    routedCue.targetScreen = screenIndex;
+    const bool ok = window->playCueWithTransition(routedCue, style, durationMs);
+    if (!ok) {
+      emit routingError(
+          QString("Failed to play cue '%1' on screen %2 layer %3.").arg(cue.name).arg(screenIndex).arg(cue.layer));
+      continue;
+    }
+    routedAny = true;
+  }
+
+  if (!routedAny) {
     return false;
   }
 
-  emit routingStatus(QString("Program: '%1' on screen %2 layer %3").arg(cue.name).arg(cue.targetScreen).arg(cue.layer));
+  emit routingStatus(QString("Program: '%1' on %2 target(s) layer %3").arg(cue.name).arg(targetScreens.size()).arg(cue.layer));
   return true;
 }
 
@@ -55,14 +111,36 @@ bool OutputRouter::previewCue(const Cue& cue) {
 }
 
 bool OutputRouter::preloadCue(const Cue& cue) {
-  OutputWindow* window = ensureWindow(cue.targetScreen);
-  if (window == nullptr) {
+  const QVector<int> targetScreens = resolveTargetScreens(cue, displayManager_);
+  if (targetScreens.isEmpty()) {
+    emit routingError(QString("No screens available for preload cue '%1'.").arg(cue.name));
     return false;
   }
 
-  const bool ok = window->preloadCue(cue);
-  if (!ok) {
-    emit routingError(QString("Failed to preload cue '%1'.").arg(cue.name));
+  bool preloadedAny = false;
+  QSet<int> attempted;
+  for (int screenIndex : targetScreens) {
+    if (attempted.contains(screenIndex)) {
+      continue;
+    }
+    attempted.insert(screenIndex);
+
+    OutputWindow* window = ensureWindow(screenIndex);
+    if (window == nullptr) {
+      continue;
+    }
+
+    Cue routedCue = cue;
+    routedCue.targetScreen = screenIndex;
+    const bool ok = window->preloadCue(routedCue);
+    if (!ok) {
+      emit routingError(QString("Failed to preload cue '%1' on screen %2.").arg(cue.name).arg(screenIndex));
+      continue;
+    }
+    preloadedAny = true;
+  }
+
+  if (!preloadedAny) {
     return false;
   }
 
@@ -80,6 +158,18 @@ bool OutputRouter::takePreview(TransitionStyle style, int durationMs) {
 }
 
 Cue OutputRouter::lastPreviewCue() const { return previewCue_; }
+
+void OutputRouter::stopCue(const Cue& cue) {
+  const QVector<int> targetScreens = resolveTargetScreens(cue, displayManager_);
+  QSet<int> attempted;
+  for (int screenIndex : targetScreens) {
+    if (attempted.contains(screenIndex)) {
+      continue;
+    }
+    attempted.insert(screenIndex);
+    stopLayer(screenIndex, cue.layer);
+  }
+}
 
 void OutputRouter::stopLayer(int screenIndex, int layer) {
   if (!windows_.contains(screenIndex)) {
@@ -127,6 +217,16 @@ void OutputRouter::showPreview() {
 void OutputRouter::hidePreview() {
   if (previewWindow_ != nullptr) {
     previewWindow_->hide();
+  }
+}
+
+void OutputRouter::setOverlayText(const QString& text) {
+  overlayText_ = text;
+  for (auto it = windows_.begin(); it != windows_.end(); ++it) {
+    it.value()->setOverlayText(text);
+  }
+  if (previewWindow_ != nullptr) {
+    previewWindow_->setOverlayText(text);
   }
 }
 
@@ -181,6 +281,9 @@ OutputWindow* OutputRouter::ensureWindow(int screenIndex) {
   if (!fallbackSlatePath_.isEmpty()) {
     window->setFallbackSlatePath(fallbackSlatePath_);
   }
+  if (!overlayText_.isEmpty()) {
+    window->setOverlayText(overlayText_);
+  }
 
   if (calibrations_.contains(screenIndex)) {
     window->setCalibration(calibrations_.value(screenIndex));
@@ -199,6 +302,7 @@ PreviewWindow* OutputRouter::ensurePreviewWindow() {
   }
 
   previewWindow_ = new PreviewWindow();
+  previewWindow_->setOverlayText(overlayText_);
   connect(previewWindow_, &PreviewWindow::previewError, this, &OutputRouter::routingError);
   return previewWindow_;
 }

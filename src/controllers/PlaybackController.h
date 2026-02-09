@@ -4,6 +4,7 @@
 #include <QObject>
 #include <QString>
 
+#include "core/Cue.h"
 #include "core/Transition.h"
 
 class CueListModel;
@@ -28,8 +29,13 @@ class PlaybackController : public QObject {
  signals:
   void playbackError(const QString& message);
   void playbackStatus(const QString& message);
+  void cueWentLive(const Cue& cue);
 
  private:
+  static QString normalizeTimecode(const QString& rawTimecode);
+  static bool cueMatchesTimecode(const QString& cueTrigger, const QString& normalizedTimecode);
+  void scheduleFollowCue(const Cue& cue, TransitionStyle style, int durationMs);
+
   CueListModel* cueModel_;
   OutputRouter* outputRouter_;
   QMap<QString, QString> lastTimecodeByCueId_;

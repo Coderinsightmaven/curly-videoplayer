@@ -2,21 +2,35 @@
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDateTime>
+#include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHeaderView>
 #include <QHBoxLayout>
+#include <QImage>
+#include <QInputDialog>
 #include <QItemSelectionModel>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QLabel>
 #include <QLineEdit>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
+#include <QPainter>
+#include <QPen>
 #include <QPushButton>
 #include <QShortcut>
 #include <QSignalBlocker>
 #include <QSpinBox>
 #include <QSplitter>
+#include <QStandardPaths>
 #include <QTableView>
+#include <QTimer>
+#include <QUrl>
 #include <QVBoxLayout>
 #include <QUuid>
 #include <QWidget>
@@ -43,12 +57,24 @@ MainWindow::MainWindow(QWidget* parent)
       ndiBridge_(new NdiBridge(this)),
       cueTable_(new QTableView(this)),
       screenCombo_(new QComboBox(this)),
+      targetSetCombo_(new QComboBox(this)),
       layerSpin_(new QSpinBox(this)),
       loopCheck_(new QCheckBox("Loop", this)),
       hotkeyEdit_(new QLineEdit(this)),
       timecodeEdit_(new QLineEdit(this)),
       midiNoteSpin_(new QSpinBox(this)),
+      dmxChannelSpin_(new QSpinBox(this)),
+      dmxValueSpin_(new QSpinBox(this)),
       preloadCheck_(new QCheckBox("Preload", this)),
+      cueFilterEdit_(new QLineEdit(this)),
+      liveInputCheck_(new QCheckBox("Live Input", this)),
+      liveInputUrlEdit_(new QLineEdit(this)),
+      cueTransitionOverrideCheck_(new QCheckBox("Use Cue Transition", this)),
+      cueTransitionCombo_(new QComboBox(this)),
+      cueTransitionDurationSpin_(new QSpinBox(this)),
+      autoFollowCheck_(new QCheckBox("Auto Follow", this)),
+      followCueRowSpin_(new QSpinBox(this)),
+      followDelaySpin_(new QSpinBox(this)),
       transitionCombo_(new QComboBox(this)),
       transitionDurationSpin_(new QSpinBox(this)),
       calibrationScreenCombo_(new QComboBox(this)),
@@ -57,9 +83,14 @@ MainWindow::MainWindow(QWidget* parent)
       keystoneYSpin_(new QSpinBox(this)),
       slatePathEdit_(new QLineEdit(this)),
       oscPortSpin_(new QSpinBox(this)),
+      relativePathCheck_(new QCheckBox("Use Relative Media Paths", this)),
       midiEnableCheck_(new QCheckBox("Enable MIDI", this)),
       ndiEnableCheck_(new QCheckBox("Enable NDI", this)),
-      statusLabel_(new QLabel(this)) {
+      backupTriggerCheck_(new QCheckBox("Enable Backup Trigger", this)),
+      backupUrlEdit_(new QLineEdit(this)),
+      backupTokenEdit_(new QLineEdit(this)),
+      statusLabel_(new QLabel(this)),
+      backupNetwork_(new QNetworkAccessManager(this)) {
   setWindowTitle("VideoPlayerForMe (v1.5 show control)");
   resize(1460, 900);
 
@@ -73,6 +104,16 @@ MainWindow::MainWindow(QWidget* parent)
   layerSpin_->setRange(0, 32);
   midiNoteSpin_->setRange(-1, 127);
   midiNoteSpin_->setSpecialValueText("None");
+  dmxChannelSpin_->setRange(-1, 512);
+  dmxChannelSpin_->setSpecialValueText("None");
+  dmxValueSpin_->setRange(0, 255);
+  dmxValueSpin_->setValue(255);
+  cueFilterEdit_->setPlaceholderText("Optional mpv vf chain, e.g. hflip");
+  liveInputUrlEdit_->setPlaceholderText("e.g. av://dshow:video=Camera");
+  followCueRowSpin_->setRange(-1, 9999);
+  followCueRowSpin_->setSpecialValueText("Next Cue");
+  followDelaySpin_->setRange(0, 300000);
+  followDelaySpin_->setSuffix(" ms");
 
   transitionCombo_->addItem("Cut", static_cast<int>(TransitionStyle::Cut));
   transitionCombo_->addItem("Fade", static_cast<int>(TransitionStyle::Fade));
@@ -82,6 +123,13 @@ MainWindow::MainWindow(QWidget* parent)
   transitionDurationSpin_->setValue(config_.transitionDurationMs);
   transitionCombo_->setCurrentIndex(1);
 
+  cueTransitionCombo_->addItem("Cut", static_cast<int>(TransitionStyle::Cut));
+  cueTransitionCombo_->addItem("Fade", static_cast<int>(TransitionStyle::Fade));
+  cueTransitionCombo_->addItem("Dip To Black", static_cast<int>(TransitionStyle::DipToBlack));
+  cueTransitionDurationSpin_->setRange(60, 6000);
+  cueTransitionDurationSpin_->setSuffix(" ms");
+  cueTransitionDurationSpin_->setValue(config_.transitionDurationMs);
+
   edgeBlendSpin_->setRange(0, 400);
   edgeBlendSpin_->setSuffix(" px");
   keystoneXSpin_->setRange(-60, 60);
@@ -89,10 +137,18 @@ MainWindow::MainWindow(QWidget* parent)
 
   oscPortSpin_->setRange(1024, 65535);
   oscPortSpin_->setValue(config_.oscPort);
+  relativePathCheck_->setChecked(config_.useRelativeMediaPaths);
   midiEnableCheck_->setChecked(config_.midiEnabled);
   ndiEnableCheck_->setChecked(config_.ndiEnabled);
+  backupTriggerCheck_->setChecked(config_.backupTriggerEnabled);
+  backupUrlEdit_->setText(config_.backupTriggerUrl);
+  backupUrlEdit_->setPlaceholderText("https://backup.local/api/trigger");
+  backupTokenEdit_->setText(config_.backupTriggerToken);
+  backupTokenEdit_->setPlaceholderText("Bearer token (optional)");
+  backupTokenEdit_->setEchoMode(QLineEdit::Password);
 
   auto* addCueButton = new QPushButton("Add Cue", this);
+  auto* addPatternButton = new QPushButton("Add Test Pattern", this);
   auto* removeCueButton = new QPushButton("Remove Cue", this);
   auto* previewButton = new QPushButton("Preview", this);
   auto* takeButton = new QPushButton("Take", this);
@@ -102,6 +158,7 @@ MainWindow::MainWindow(QWidget* parent)
   auto* stopAllButton = new QPushButton("Stop All", this);
 
   auto* openProjectButton = new QPushButton("Open Project", this);
+  auto* relinkButton = new QPushButton("Relink Missing", this);
   auto* saveProjectButton = new QPushButton("Save", this);
   auto* saveAsProjectButton = new QPushButton("Save As", this);
   auto* showOutputsButton = new QPushButton("Show Outputs", this);
@@ -114,6 +171,7 @@ MainWindow::MainWindow(QWidget* parent)
 
   auto* transportControls = new QHBoxLayout();
   transportControls->addWidget(addCueButton);
+  transportControls->addWidget(addPatternButton);
   transportControls->addWidget(removeCueButton);
   transportControls->addSpacing(12);
   transportControls->addWidget(previewButton);
@@ -126,6 +184,7 @@ MainWindow::MainWindow(QWidget* parent)
 
   auto* sessionControls = new QHBoxLayout();
   sessionControls->addWidget(openProjectButton);
+  sessionControls->addWidget(relinkButton);
   sessionControls->addWidget(saveProjectButton);
   sessionControls->addWidget(saveAsProjectButton);
   sessionControls->addSpacing(12);
@@ -140,12 +199,24 @@ MainWindow::MainWindow(QWidget* parent)
 
   auto* cueForm = new QFormLayout();
   cueForm->addRow("Target Screen", screenCombo_);
+  cueForm->addRow("Target Set", targetSetCombo_);
   cueForm->addRow("Layer", layerSpin_);
   cueForm->addRow("Loop", loopCheck_);
   cueForm->addRow("Preload", preloadCheck_);
+  cueForm->addRow("Live Input", liveInputCheck_);
+  cueForm->addRow("Live Source", liveInputUrlEdit_);
+  cueForm->addRow("Media Filter", cueFilterEdit_);
+  cueForm->addRow("Cue Transition", cueTransitionOverrideCheck_);
+  cueForm->addRow("Cue Style", cueTransitionCombo_);
+  cueForm->addRow("Cue Duration", cueTransitionDurationSpin_);
+  cueForm->addRow("Auto Follow", autoFollowCheck_);
+  cueForm->addRow("Follow Row", followCueRowSpin_);
+  cueForm->addRow("Follow Delay", followDelaySpin_);
   cueForm->addRow("Hotkey", hotkeyEdit_);
   cueForm->addRow("Timecode", timecodeEdit_);
   cueForm->addRow("MIDI Note", midiNoteSpin_);
+  cueForm->addRow("DMX Channel", dmxChannelSpin_);
+  cueForm->addRow("DMX Min Value", dmxValueSpin_);
 
   auto* cueGroup = new QGroupBox("Cue Properties", this);
   cueGroup->setLayout(cueForm);
@@ -170,8 +241,12 @@ MainWindow::MainWindow(QWidget* parent)
 
   auto* controlForm = new QFormLayout();
   controlForm->addRow("OSC Port", oscPortSpin_);
+  controlForm->addRow("Path Mode", relativePathCheck_);
   controlForm->addRow("MIDI", midiEnableCheck_);
   controlForm->addRow("NDI", ndiEnableCheck_);
+  controlForm->addRow("Backup Trigger", backupTriggerCheck_);
+  controlForm->addRow("Backup URL", backupUrlEdit_);
+  controlForm->addRow("Backup Token", backupTokenEdit_);
 
   auto* controlGroup = new QGroupBox("Control Inputs", this);
   controlGroup->setLayout(controlForm);
@@ -201,6 +276,7 @@ MainWindow::MainWindow(QWidget* parent)
   setCentralWidget(root);
 
   connect(addCueButton, &QPushButton::clicked, this, &MainWindow::appendCueFromFile);
+  connect(addPatternButton, &QPushButton::clicked, this, &MainWindow::appendTestPatternCue);
   connect(removeCueButton, &QPushButton::clicked, this, &MainWindow::removeSelectedCue);
   connect(previewButton, &QPushButton::clicked, this, &MainWindow::previewSelectedCue);
   connect(takeButton, &QPushButton::clicked, this, &MainWindow::takePreviewCue);
@@ -210,6 +286,7 @@ MainWindow::MainWindow(QWidget* parent)
   connect(stopAllButton, &QPushButton::clicked, this, &MainWindow::stopAllCues);
 
   connect(openProjectButton, &QPushButton::clicked, this, &MainWindow::openProject);
+  connect(relinkButton, &QPushButton::clicked, this, &MainWindow::relinkMissingMedia);
   connect(saveProjectButton, &QPushButton::clicked, this, &MainWindow::saveProject);
   connect(saveAsProjectButton, &QPushButton::clicked, this, &MainWindow::saveProjectAs);
 
@@ -227,13 +304,32 @@ MainWindow::MainWindow(QWidget* parent)
 
   connect(screenCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
           [this](int) { applyEditorsToSelection(); });
+  connect(targetSetCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+          [this](int) { applyEditorsToSelection(); });
   connect(layerSpin_, QOverload<int>::of(&QSpinBox::valueChanged), this,
           [this](int) { applyEditorsToSelection(); });
   connect(loopCheck_, &QCheckBox::toggled, this, [this](bool) { applyEditorsToSelection(); });
   connect(preloadCheck_, &QCheckBox::toggled, this, [this](bool) { applyEditorsToSelection(); });
+  connect(liveInputCheck_, &QCheckBox::toggled, this, [this](bool) { applyEditorsToSelection(); });
+  connect(liveInputUrlEdit_, &QLineEdit::editingFinished, this, &MainWindow::applyEditorsToSelection);
+  connect(cueFilterEdit_, &QLineEdit::editingFinished, this, &MainWindow::applyEditorsToSelection);
+  connect(cueTransitionOverrideCheck_, &QCheckBox::toggled, this, [this](bool) { applyEditorsToSelection(); });
+  connect(cueTransitionCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+          [this](int) { applyEditorsToSelection(); });
+  connect(cueTransitionDurationSpin_, QOverload<int>::of(&QSpinBox::valueChanged), this,
+          [this](int) { applyEditorsToSelection(); });
+  connect(autoFollowCheck_, &QCheckBox::toggled, this, [this](bool) { applyEditorsToSelection(); });
+  connect(followCueRowSpin_, QOverload<int>::of(&QSpinBox::valueChanged), this,
+          [this](int) { applyEditorsToSelection(); });
+  connect(followDelaySpin_, QOverload<int>::of(&QSpinBox::valueChanged), this,
+          [this](int) { applyEditorsToSelection(); });
   connect(hotkeyEdit_, &QLineEdit::editingFinished, this, &MainWindow::applyEditorsToSelection);
   connect(timecodeEdit_, &QLineEdit::editingFinished, this, &MainWindow::applyEditorsToSelection);
   connect(midiNoteSpin_, QOverload<int>::of(&QSpinBox::valueChanged), this,
+          [this](int) { applyEditorsToSelection(); });
+  connect(dmxChannelSpin_, QOverload<int>::of(&QSpinBox::valueChanged), this,
+          [this](int) { applyEditorsToSelection(); });
+  connect(dmxValueSpin_, QOverload<int>::of(&QSpinBox::valueChanged), this,
           [this](int) { applyEditorsToSelection(); });
 
   connect(transitionCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int) {
@@ -259,8 +355,12 @@ MainWindow::MainWindow(QWidget* parent)
   connect(oscPortSpin_, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int value) {
     config_.oscPort = value;
   });
+  connect(relativePathCheck_, &QCheckBox::toggled, this, [this](bool checked) { config_.useRelativeMediaPaths = checked; });
   connect(midiEnableCheck_, &QCheckBox::toggled, this, [this](bool) { applyControlConfig(); });
   connect(ndiEnableCheck_, &QCheckBox::toggled, this, [this](bool) { applyControlConfig(); });
+  connect(backupTriggerCheck_, &QCheckBox::toggled, this, [this](bool) { applyControlConfig(); });
+  connect(backupUrlEdit_, &QLineEdit::editingFinished, this, &MainWindow::applyControlConfig);
+  connect(backupTokenEdit_, &QLineEdit::editingFinished, this, &MainWindow::applyControlConfig);
 
   connect(displayManager_, &DisplayManager::displaysChanged, this, &MainWindow::refreshScreenChoices);
 
@@ -268,6 +368,7 @@ MainWindow::MainWindow(QWidget* parent)
   connect(outputRouter_, &OutputRouter::routingStatus, this, &MainWindow::showStatus);
   connect(playbackController_, &PlaybackController::playbackError, this, &MainWindow::showStatus);
   connect(playbackController_, &PlaybackController::playbackStatus, this, &MainWindow::showStatus);
+  connect(playbackController_, &PlaybackController::cueWentLive, this, &MainWindow::forwardCueToBackup);
 
   connect(oscServer_, &OscServer::statusMessage, this, &MainWindow::showStatus);
   connect(oscServer_, &OscServer::playRowRequested, this, &MainWindow::handleExternalPlayRow);
@@ -276,6 +377,8 @@ MainWindow::MainWindow(QWidget* parent)
   connect(oscServer_, &OscServer::takeRequested, this, &MainWindow::handleExternalTake);
   connect(oscServer_, &OscServer::stopAllRequested, this, &MainWindow::stopAllCues);
   connect(oscServer_, &OscServer::timecodeReceived, this, &MainWindow::handleTimecode);
+  connect(oscServer_, &OscServer::dmxValueReceived, this, &MainWindow::handleExternalDmx);
+  connect(oscServer_, &OscServer::overlayTextReceived, this, &MainWindow::handleExternalOverlayText);
 
   connect(midiService_, &MidiInputService::statusMessage, this, &MainWindow::showStatus);
   connect(midiService_, &MidiInputService::cueNoteRequested, this, &MainWindow::handleExternalMidiNote);
@@ -319,12 +422,24 @@ void MainWindow::appendCueFromFile() {
   }
 
   cue.targetScreen = screenCombo_->currentData().toInt();
+  cue.targetSetId = targetSetCombo_->currentData().toString();
   cue.layer = layerSpin_->value();
   cue.loop = loopCheck_->isChecked();
   cue.preload = preloadCheck_->isChecked();
+  cue.isLiveInput = liveInputCheck_->isChecked();
+  cue.liveInputUrl = liveInputUrlEdit_->text().trimmed();
+  cue.videoFilter = cueFilterEdit_->text().trimmed();
+  cue.useTransitionOverride = cueTransitionOverrideCheck_->isChecked();
+  cue.transitionStyle = static_cast<TransitionStyle>(cueTransitionCombo_->currentData().toInt());
+  cue.transitionDurationMs = cueTransitionDurationSpin_->value();
+  cue.autoFollow = autoFollowCheck_->isChecked();
+  cue.followCueRow = followCueRowSpin_->value();
+  cue.followDelayMs = followDelaySpin_->value();
   cue.hotkey = hotkeyEdit_->text().trimmed();
   cue.timecodeTrigger = timecodeEdit_->text().trimmed();
   cue.midiNote = midiNoteSpin_->value();
+  cue.dmxChannel = dmxChannelSpin_->value();
+  cue.dmxValue = dmxValueSpin_->value();
 
   cueModel_->addCue(cue);
 
@@ -336,6 +451,80 @@ void MainWindow::appendCueFromFile() {
   }
 
   showStatus(QString("Added cue '%1'.").arg(cue.name));
+}
+
+void MainWindow::appendTestPatternCue() {
+  const QString patternPath = ensureColorBarsPatternPath();
+  if (patternPath.isEmpty()) {
+    showStatus("Failed to create color bars test pattern.");
+    return;
+  }
+
+  Cue cue;
+  cue.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+  cue.filePath = patternPath;
+  cue.name = QString("Test Pattern - Color Bars");
+  cue.targetScreen = screenCombo_->currentData().toInt();
+  cue.targetSetId = targetSetCombo_->currentData().toString();
+  cue.layer = layerSpin_->value();
+  cue.loop = loopCheck_->isChecked();
+  cue.preload = preloadCheck_->isChecked();
+  cue.isLiveInput = false;
+  cue.liveInputUrl.clear();
+  cue.videoFilter = cueFilterEdit_->text().trimmed();
+  cue.useTransitionOverride = cueTransitionOverrideCheck_->isChecked();
+  cue.transitionStyle = static_cast<TransitionStyle>(cueTransitionCombo_->currentData().toInt());
+  cue.transitionDurationMs = cueTransitionDurationSpin_->value();
+  cue.autoFollow = autoFollowCheck_->isChecked();
+  cue.followCueRow = followCueRowSpin_->value();
+  cue.followDelayMs = followDelaySpin_->value();
+  cue.hotkey = hotkeyEdit_->text().trimmed();
+  cue.timecodeTrigger = timecodeEdit_->text().trimmed();
+  cue.midiNote = midiNoteSpin_->value();
+  cue.dmxChannel = dmxChannelSpin_->value();
+  cue.dmxValue = dmxValueSpin_->value();
+
+  cueModel_->addCue(cue);
+  const int row = cueModel_->rowCount() - 1;
+  cueTable_->selectRow(row);
+  if (cue.preload) {
+    playbackController_->preloadCueAtRow(row);
+  }
+
+  showStatus("Added color bars test pattern cue.");
+}
+
+void MainWindow::relinkMissingMedia() {
+  int missingCount = 0;
+  int relinkedCount = 0;
+  const QString startDir = currentProjectPath_.isEmpty() ? QDir::homePath() : QFileInfo(currentProjectPath_).absolutePath();
+
+  for (int row = 0; row < cueModel_->rowCount(); ++row) {
+    Cue cue = cueModel_->cueAt(row);
+    if (cue.filePath.trimmed().isEmpty() || cue.filePath.contains("://")) {
+      continue;
+    }
+
+    if (QFileInfo::exists(cue.filePath)) {
+      continue;
+    }
+
+    ++missingCount;
+    const QString replacement = QFileDialog::getOpenFileName(
+        this, QString("Relink media for cue '%1'").arg(cue.name), startDir,
+        "Media files (*.mp4 *.mov *.mkv *.m4v *.avi *.webm *.mpg *.mpeg *.mxf *.ts *.wav *.mp3 *.png *.jpg *.jpeg *.gif);;All files (*)");
+    if (replacement.isEmpty()) {
+      continue;
+    }
+
+    cue.filePath = replacement;
+    cue.isLiveInput = false;
+    cue.liveInputUrl.clear();
+    cueModel_->updateCue(row, cue);
+    ++relinkedCount;
+  }
+
+  showStatus(QString("Relink complete: %1/%2 missing cues relinked.").arg(relinkedCount).arg(missingCount));
 }
 
 void MainWindow::removeSelectedCue() {
@@ -443,7 +632,22 @@ void MainWindow::openProject() {
 
   currentProjectPath_ = filePath;
   applyLoadedProject(project);
-  showStatus(QString("Loaded project: %1").arg(filePath));
+
+  int missingCount = 0;
+  for (const Cue& cue : cueModel_->cues()) {
+    if (cue.filePath.isEmpty() || cue.filePath.contains("://")) {
+      continue;
+    }
+    if (!QFileInfo::exists(cue.filePath)) {
+      ++missingCount;
+    }
+  }
+
+  if (missingCount > 0) {
+    showStatus(QString("Loaded project: %1 (%2 missing media file(s), run Relink Missing)").arg(filePath).arg(missingCount));
+  } else {
+    showStatus(QString("Loaded project: %1").arg(filePath));
+  }
 }
 
 void MainWindow::syncEditorsFromSelection() {
@@ -451,20 +655,46 @@ void MainWindow::syncEditorsFromSelection() {
   updatingEditors_ = true;
 
   QSignalBlocker blockScreen(screenCombo_);
+  QSignalBlocker blockTargetSet(targetSetCombo_);
   QSignalBlocker blockLayer(layerSpin_);
   QSignalBlocker blockLoop(loopCheck_);
   QSignalBlocker blockPreload(preloadCheck_);
+  QSignalBlocker blockLiveInput(liveInputCheck_);
+  QSignalBlocker blockLiveUrl(liveInputUrlEdit_);
+  QSignalBlocker blockFilter(cueFilterEdit_);
+  QSignalBlocker blockCueTransitionOverride(cueTransitionOverrideCheck_);
+  QSignalBlocker blockCueTransition(cueTransitionCombo_);
+  QSignalBlocker blockCueDuration(cueTransitionDurationSpin_);
+  QSignalBlocker blockAutoFollow(autoFollowCheck_);
+  QSignalBlocker blockFollowRow(followCueRowSpin_);
+  QSignalBlocker blockFollowDelay(followDelaySpin_);
   QSignalBlocker blockHotkey(hotkeyEdit_);
   QSignalBlocker blockTimecode(timecodeEdit_);
   QSignalBlocker blockMidi(midiNoteSpin_);
+  QSignalBlocker blockDmxChannel(dmxChannelSpin_);
+  QSignalBlocker blockDmxValue(dmxValueSpin_);
 
   if (!cueModel_->isValidRow(row)) {
+    if (targetSetCombo_->count() > 0) {
+      targetSetCombo_->setCurrentIndex(0);
+    }
     layerSpin_->setValue(0);
     loopCheck_->setChecked(false);
     preloadCheck_->setChecked(false);
+    liveInputCheck_->setChecked(false);
+    liveInputUrlEdit_->setText({});
+    cueFilterEdit_->setText({});
+    cueTransitionOverrideCheck_->setChecked(false);
+    cueTransitionCombo_->setCurrentIndex(1);
+    cueTransitionDurationSpin_->setValue(config_.transitionDurationMs);
+    autoFollowCheck_->setChecked(false);
+    followCueRowSpin_->setValue(-1);
+    followDelaySpin_->setValue(0);
     hotkeyEdit_->setText({});
     timecodeEdit_->setText({});
     midiNoteSpin_->setValue(-1);
+    dmxChannelSpin_->setValue(-1);
+    dmxValueSpin_->setValue(255);
     if (screenCombo_->count() > 0) {
       screenCombo_->setCurrentIndex(0);
     }
@@ -477,13 +707,33 @@ void MainWindow::syncEditorsFromSelection() {
   if (comboIndex >= 0) {
     screenCombo_->setCurrentIndex(comboIndex);
   }
+  const int targetSetIndex = targetSetCombo_->findData(cue.targetSetId);
+  if (targetSetIndex >= 0) {
+    targetSetCombo_->setCurrentIndex(targetSetIndex);
+  } else if (targetSetCombo_->count() > 0) {
+    targetSetCombo_->setCurrentIndex(0);
+  }
 
   layerSpin_->setValue(cue.layer);
   loopCheck_->setChecked(cue.loop);
   preloadCheck_->setChecked(cue.preload);
+  liveInputCheck_->setChecked(cue.isLiveInput);
+  liveInputUrlEdit_->setText(cue.liveInputUrl);
+  cueFilterEdit_->setText(cue.videoFilter);
+  cueTransitionOverrideCheck_->setChecked(cue.useTransitionOverride);
+  const int cueTransitionIndex = cueTransitionCombo_->findData(static_cast<int>(cue.transitionStyle));
+  if (cueTransitionIndex >= 0) {
+    cueTransitionCombo_->setCurrentIndex(cueTransitionIndex);
+  }
+  cueTransitionDurationSpin_->setValue(cue.transitionDurationMs);
+  autoFollowCheck_->setChecked(cue.autoFollow);
+  followCueRowSpin_->setValue(cue.followCueRow);
+  followDelaySpin_->setValue(cue.followDelayMs);
   hotkeyEdit_->setText(cue.hotkey);
   timecodeEdit_->setText(cue.timecodeTrigger);
   midiNoteSpin_->setValue(cue.midiNote < 0 ? -1 : cue.midiNote);
+  dmxChannelSpin_->setValue(cue.dmxChannel < 0 ? -1 : cue.dmxChannel);
+  dmxValueSpin_->setValue(cue.dmxValue);
 
   updatingEditors_ = false;
 }
@@ -500,12 +750,24 @@ void MainWindow::applyEditorsToSelection() {
 
   Cue cue = cueModel_->cueAt(row);
   cue.targetScreen = screenCombo_->currentData().toInt();
+  cue.targetSetId = targetSetCombo_->currentData().toString();
   cue.layer = layerSpin_->value();
   cue.loop = loopCheck_->isChecked();
   cue.preload = preloadCheck_->isChecked();
+  cue.isLiveInput = liveInputCheck_->isChecked();
+  cue.liveInputUrl = liveInputUrlEdit_->text().trimmed();
+  cue.videoFilter = cueFilterEdit_->text().trimmed();
+  cue.useTransitionOverride = cueTransitionOverrideCheck_->isChecked();
+  cue.transitionStyle = static_cast<TransitionStyle>(cueTransitionCombo_->currentData().toInt());
+  cue.transitionDurationMs = cueTransitionDurationSpin_->value();
+  cue.autoFollow = autoFollowCheck_->isChecked();
+  cue.followCueRow = followCueRowSpin_->value();
+  cue.followDelayMs = followDelaySpin_->value();
   cue.hotkey = hotkeyEdit_->text().trimmed();
   cue.timecodeTrigger = timecodeEdit_->text().trimmed();
   cue.midiNote = midiNoteSpin_->value();
+  cue.dmxChannel = dmxChannelSpin_->value();
+  cue.dmxValue = dmxValueSpin_->value();
 
   cueModel_->updateCue(row, cue);
 }
@@ -513,23 +775,32 @@ void MainWindow::applyEditorsToSelection() {
 void MainWindow::refreshScreenChoices() {
   const int currentScreen = screenCombo_->currentData().toInt();
   const int currentCalibrationScreen = calibrationScreenCombo_->currentData().toInt();
+  const QString currentTargetSet = targetSetCombo_->currentData().toString();
 
   QSignalBlocker blockScreen(screenCombo_);
   QSignalBlocker blockCalibration(calibrationScreenCombo_);
+  QSignalBlocker blockTargetSet(targetSetCombo_);
 
   screenCombo_->clear();
   calibrationScreenCombo_->clear();
+  targetSetCombo_->clear();
+  targetSetCombo_->addItem("Selected Screen", QString());
 
   const QVector<DisplayTarget> targets = displayManager_->displays();
   for (const DisplayTarget& target : targets) {
     const QString label = QString("%1 | %2x%3").arg(target.name).arg(target.size.width()).arg(target.size.height());
     screenCombo_->addItem(label, target.index);
     calibrationScreenCombo_->addItem(label, target.index);
+    targetSetCombo_->addItem(QString("Screen %1 (%2)").arg(target.index).arg(target.name),
+                             QString("screen-%1").arg(target.index));
   }
 
   if (screenCombo_->count() == 0) {
     screenCombo_->addItem("Primary Screen", 0);
     calibrationScreenCombo_->addItem("Primary Screen", 0);
+    targetSetCombo_->addItem("Primary Screen", "screen-0");
+  } else if (targets.size() > 1) {
+    targetSetCombo_->addItem("All Screens", "all-screens");
   }
 
   const int restoredScreenIndex = screenCombo_->findData(currentScreen);
@@ -540,6 +811,13 @@ void MainWindow::refreshScreenChoices() {
   const int restoredCalibrationIndex = calibrationScreenCombo_->findData(currentCalibrationScreen);
   if (restoredCalibrationIndex >= 0) {
     calibrationScreenCombo_->setCurrentIndex(restoredCalibrationIndex);
+  }
+
+  const int restoredTargetSetIndex = targetSetCombo_->findData(currentTargetSet);
+  if (restoredTargetSetIndex >= 0) {
+    targetSetCombo_->setCurrentIndex(restoredTargetSetIndex);
+  } else if (targetSetCombo_->count() > 0) {
+    targetSetCombo_->setCurrentIndex(0);
   }
 
   syncCalibrationEditors();
@@ -598,8 +876,12 @@ void MainWindow::restartOscServer() {
 }
 
 void MainWindow::applyControlConfig() {
+  config_.useRelativeMediaPaths = relativePathCheck_->isChecked();
   config_.midiEnabled = midiEnableCheck_->isChecked();
   config_.ndiEnabled = ndiEnableCheck_->isChecked();
+  config_.backupTriggerEnabled = backupTriggerCheck_->isChecked();
+  config_.backupTriggerUrl = backupUrlEdit_->text().trimmed();
+  config_.backupTriggerToken = backupTokenEdit_->text().trimmed();
 
   if (config_.midiEnabled) {
     if (!midiService_->start()) {
@@ -646,10 +928,58 @@ void MainWindow::handleExternalMidiNote(int note) {
   playbackController_->playCueAtRow(resolvedRow, selectedTransitionStyle(), selectedTransitionDuration());
 }
 
+void MainWindow::handleExternalDmx(int channel, int value) {
+  const int resolvedRow = resolveCueRowFromDmx(channel, value);
+  selectRowIfValid(resolvedRow);
+  playbackController_->playCueAtRow(resolvedRow, selectedTransitionStyle(), selectedTransitionDuration());
+}
+
+void MainWindow::handleExternalOverlayText(const QString& text) { outputRouter_->setOverlayText(text.trimmed()); }
+
 void MainWindow::handleExternalTake() { playbackController_->takePreviewCue(selectedTransitionStyle(), selectedTransitionDuration()); }
 
 void MainWindow::handleTimecode(const QString& timecode) {
   playbackController_->triggerByTimecode(timecode.trimmed(), selectedTransitionStyle(), selectedTransitionDuration());
+}
+
+void MainWindow::forwardCueToBackup(const Cue& cue) {
+  if (!config_.backupTriggerEnabled || config_.backupTriggerUrl.trimmed().isEmpty()) {
+    return;
+  }
+
+  const QUrl url(config_.backupTriggerUrl.trimmed());
+  if (!url.isValid()) {
+    showStatus("Backup trigger URL is invalid.");
+    return;
+  }
+
+  QNetworkRequest request(url);
+  request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+  if (!config_.backupTriggerToken.trimmed().isEmpty()) {
+    request.setRawHeader("Authorization", QByteArray("Bearer ") + config_.backupTriggerToken.toUtf8());
+  }
+
+  QJsonObject payload;
+  payload.insert("cueId", cue.id);
+  payload.insert("cueName", cue.name);
+  payload.insert("targetScreen", cue.targetScreen);
+  payload.insert("targetSetId", cue.targetSetId);
+  payload.insert("layer", cue.layer);
+  payload.insert("timestampUtc", QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
+
+  QNetworkReply* reply = backupNetwork_->post(request, QJsonDocument(payload).toJson(QJsonDocument::Compact));
+  QTimer::singleShot(qMax(300, config_.backupTriggerTimeoutMs), reply, [reply]() {
+    if (reply->isRunning()) {
+      reply->abort();
+    }
+  });
+
+  connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+    if (reply->error() != QNetworkReply::NoError) {
+      showStatus(QString("Backup trigger failed: %1").arg(reply->errorString()));
+    }
+    reply->deleteLater();
+  });
 }
 
 void MainWindow::rebuildCueHotkeys() {
@@ -726,11 +1056,74 @@ int MainWindow::resolveCueRowFromMidiNote(int note) const {
   return -1;
 }
 
+int MainWindow::resolveCueRowFromDmx(int channel, int value) const {
+  if (channel < 0) {
+    return -1;
+  }
+
+  const QVector<Cue> cues = cueModel_->cues();
+  for (int i = 0; i < cues.size(); ++i) {
+    const Cue& cue = cues.at(i);
+    if (cue.dmxChannel < 0) {
+      continue;
+    }
+    if (cue.dmxChannel == channel && value >= cue.dmxValue) {
+      return i;
+    }
+  }
+
+  return -1;
+}
+
 void MainWindow::selectRowIfValid(int row) {
   if (!cueModel_->isValidRow(row)) {
     return;
   }
   cueTable_->selectRow(row);
+}
+
+QString MainWindow::ensureColorBarsPatternPath() const {
+  const QString appData = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+  if (appData.isEmpty()) {
+    return {};
+  }
+
+  const QDir base(appData);
+  if (!base.exists() && !QDir().mkpath(base.path())) {
+    return {};
+  }
+
+  const QString patternsDirPath = base.filePath("patterns");
+  if (!QDir().mkpath(patternsDirPath)) {
+    return {};
+  }
+
+  const QString patternPath = QDir(patternsDirPath).filePath("color-bars-1920x1080.png");
+  if (QFileInfo::exists(patternPath)) {
+    return patternPath;
+  }
+
+  QImage image(1920, 1080, QImage::Format_RGB32);
+  image.fill(Qt::black);
+
+  QPainter painter(&image);
+  const QVector<QColor> colors = {
+      QColor(255, 255, 255), QColor(255, 255, 0),  QColor(0, 255, 255), QColor(0, 255, 0),
+      QColor(255, 0, 255),   QColor(255, 0, 0),    QColor(0, 0, 255),   QColor(32, 32, 32)};
+  const int barWidth = image.width() / colors.size();
+  for (int i = 0; i < colors.size(); ++i) {
+    painter.fillRect(i * barWidth, 0, barWidth, image.height(), colors.at(i));
+  }
+
+  painter.setPen(QPen(Qt::black, 3));
+  painter.drawRect(1, 1, image.width() - 2, image.height() - 2);
+  painter.end();
+
+  if (!image.save(patternPath, "PNG")) {
+    return {};
+  }
+
+  return patternPath;
 }
 
 TransitionStyle MainWindow::selectedTransitionStyle() const {
@@ -753,8 +1146,12 @@ void MainWindow::applyLoadedProject(const ProjectData& project) {
     QSignalBlocker blockStyle(transitionCombo_);
     QSignalBlocker blockDuration(transitionDurationSpin_);
     QSignalBlocker blockOsc(oscPortSpin_);
+    QSignalBlocker blockRelative(relativePathCheck_);
     QSignalBlocker blockMidi(midiEnableCheck_);
     QSignalBlocker blockNdi(ndiEnableCheck_);
+    QSignalBlocker blockBackupCheck(backupTriggerCheck_);
+    QSignalBlocker blockBackupUrl(backupUrlEdit_);
+    QSignalBlocker blockBackupToken(backupTokenEdit_);
 
     const int styleIndex = transitionCombo_->findData(static_cast<int>(config_.transitionStyle));
     if (styleIndex >= 0) {
@@ -762,8 +1159,12 @@ void MainWindow::applyLoadedProject(const ProjectData& project) {
     }
     transitionDurationSpin_->setValue(config_.transitionDurationMs);
     oscPortSpin_->setValue(config_.oscPort);
+    relativePathCheck_->setChecked(config_.useRelativeMediaPaths);
     midiEnableCheck_->setChecked(config_.midiEnabled);
     ndiEnableCheck_->setChecked(config_.ndiEnabled);
+    backupTriggerCheck_->setChecked(config_.backupTriggerEnabled);
+    backupUrlEdit_->setText(config_.backupTriggerUrl);
+    backupTokenEdit_->setText(config_.backupTriggerToken);
   }
 
   slatePathEdit_->setText(config_.fallbackSlatePath);

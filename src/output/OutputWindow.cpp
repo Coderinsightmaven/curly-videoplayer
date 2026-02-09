@@ -19,7 +19,8 @@ OutputWindow::OutputWindow(QWidget* parent)
       edgeBlendOverlay_(new EdgeBlendOverlay(this)),
       fadeOverlay_(new QWidget(this)),
       fadeEffect_(new QGraphicsOpacityEffect(this)),
-      slateLabel_(new QLabel(this)) {
+      slateLabel_(new QLabel(this)),
+      overlayLabel_(new QLabel(this)) {
   setWindowFlag(Qt::FramelessWindowHint, true);
   setWindowFlag(Qt::WindowStaysOnTopHint, true);
   setWindowFlag(Qt::Tool, true);
@@ -43,6 +44,12 @@ OutputWindow::OutputWindow(QWidget* parent)
       "color: #f7f7f7; background: rgba(0, 0, 0, 190); font-size: 22px; font-weight: 600; padding: 24px;");
   slateLabel_->setText("SLATE\nNo media loaded");
   slateLabel_->show();
+
+  overlayLabel_->setStyleSheet(
+      "color: #f4f4f4; background: rgba(0, 0, 0, 170); font-size: 22px; font-weight: 600; padding: 10px 14px;");
+  overlayLabel_->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+  overlayLabel_->setMargin(8);
+  overlayLabel_->hide();
 
   connect(surface_, &LayerSurface::playbackError, this, [this](const QString& message) {
     showSlate(message);
@@ -117,11 +124,28 @@ void OutputWindow::setFallbackSlatePath(const QString& path) {
   }
 }
 
+void OutputWindow::setOverlayText(const QString& text) {
+  if (text.trimmed().isEmpty()) {
+    overlayLabel_->hide();
+    return;
+  }
+
+  overlayLabel_->setText(text);
+  overlayLabel_->adjustSize();
+  overlayLabel_->move(24, 24);
+  overlayLabel_->show();
+  overlayLabel_->raise();
+}
+
 void OutputWindow::resizeEvent(QResizeEvent* event) {
   QWidget::resizeEvent(event);
   fadeOverlay_->setGeometry(rect());
   edgeBlendOverlay_->setGeometry(rect());
   slateLabel_->setGeometry(rect());
+  if (overlayLabel_->isVisible()) {
+    overlayLabel_->adjustSize();
+    overlayLabel_->move(24, 24);
+  }
 }
 
 void OutputWindow::showSlate(const QString& message) {

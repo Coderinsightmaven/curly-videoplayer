@@ -1,0 +1,95 @@
+name: Repro Bug Report
+description: Report a bug with reproducible steps, expected/actual behavior, and environment details.
+title: "[Bug]: "
+labels:
+  - bug
+  - needs-repro
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form to submit a reproducible bug report.
+        Reports missing required fields are harder to diagnose and may be sent back for clarification.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One sentence describing the bug.
+      placeholder: "Preview takes the wrong cue when MIDI note 60 is received."
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction Steps
+      description: Exact, ordered steps that reliably reproduce the issue.
+      placeholder: |
+        1. Launch the app.
+        2. Open project file ...
+        3. Send OSC command ...
+        4. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What should happen.
+      placeholder: "Cue with matching MIDI note plays on target screen 1."
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened.
+      placeholder: "Cue at row index 1 played instead."
+    validations:
+      required: true
+
+  - type: textarea
+    id: media_project
+    attributes:
+      label: Repro Assets
+      description: Attach or link a minimal `.show` project and any media needed to reproduce.
+      placeholder: "Attach files or provide links to sample project/media."
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Console Logs / Error Messages
+      description: Paste relevant output from app launch, build, or test commands.
+      render: shell
+      placeholder: "Paste logs here."
+    validations:
+      required: false
+
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: Provide exact toolchain/runtime versions.
+      placeholder: |
+        OS:
+        Qt version:
+        libmpv version:
+        CMake version:
+        Compiler:
+        Preset used (dev-debug/sanitizer-debug):
+    validations:
+      required: true
+
+  - type: textarea
+    id: regression
+    attributes:
+      label: Regression Info
+      description: If known, include the last known good version/commit.
+      placeholder: "Worked in commit abc123, broken in def456."
+    validations:
+      required: false

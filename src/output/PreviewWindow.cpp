@@ -20,6 +20,13 @@ PreviewWindow::PreviewWindow(QWidget* parent) : QWidget(parent), surface_(new La
   layout->addWidget(badge, 0, Qt::AlignLeft);
   layout->addWidget(surface_, 1);
 
+  overlayLabel_ = new QLabel(this);
+  overlayLabel_->setStyleSheet(
+      "color: #f0f0f0; background: rgba(0, 0, 0, 170); font-size: 20px; font-weight: 600; padding: 8px 10px;");
+  overlayLabel_->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+  overlayLabel_->setMargin(6);
+  overlayLabel_->hide();
+
   connect(surface_, &LayerSurface::playbackError, this, &PreviewWindow::previewError);
 }
 
@@ -42,3 +49,16 @@ bool PreviewWindow::preloadCue(const Cue& cue) {
 void PreviewWindow::stopAll() { surface_->stopAll(); }
 
 Cue PreviewWindow::lastCue() const { return lastCue_; }
+
+void PreviewWindow::setOverlayText(const QString& text) {
+  if (text.trimmed().isEmpty()) {
+    overlayLabel_->hide();
+    return;
+  }
+
+  overlayLabel_->setText(text);
+  overlayLabel_->adjustSize();
+  overlayLabel_->move(16, 16);
+  overlayLabel_->show();
+  overlayLabel_->raise();
+}

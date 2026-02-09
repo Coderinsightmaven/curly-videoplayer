@@ -23,6 +23,8 @@ class OscServer : public QObject {
   void takeRequested();
   void stopAllRequested();
   void timecodeReceived(const QString& timecode);
+  void dmxValueReceived(int channel, int value);
+  void overlayTextReceived(const QString& text);
   void statusMessage(const QString& message);
 
  private slots:

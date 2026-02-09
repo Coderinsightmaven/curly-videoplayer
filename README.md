@@ -6,28 +6,42 @@ Cross-platform Qt/C++ show-control video app inspired by ProVideoPlayer workflow
 
 - Cue list with metadata:
   - target screen
+  - target set (`Selected Screen`, per-screen set, or `All Screens`)
   - layer
   - loop
   - preload flag
   - hotkey
   - timecode trigger
   - MIDI note mapping
+  - DMX channel/value trigger mapping
+  - cue-level transition override
+  - cue filter chain (`mpv vf`)
+  - live input source URL
+  - auto-follow action (follow row + delay)
 - Program output engine:
   - multi-screen full-screen outputs
   - per-screen layered playback
   - transitions (`Cut`, `Fade`, `Dip To Black`)
   - per-screen edge blend + keystone controls
   - fallback slate on errors/stopped state
+  - operator text overlay (`OSC /text`)
 - Preview/program workflow:
   - preview window
   - `Take` to program with selected transition
 - Project persistence:
   - save/load `.show` (JSON structure)
   - cues, transition settings, control config, calibrations
+  - relative media path mode for portable projects
 - Control inputs:
   - OSC UDP server
   - MIDI input (optional RtMidi build)
   - timecode trigger routing (from OSC `/timecode` or MIDI MTC quarter-frame)
+  - DMX-style trigger input via OSC `/dmx <channel> <value>`
+- Backup trigger:
+  - optional HTTP POST when a cue goes live
+- Utility workflow:
+  - add color-bars test-pattern cues
+  - relink missing media files in loaded projects
 - Optional NDI hook:
   - compile-time abstraction with SDK detection
 - Packaging/deployment baseline:
@@ -66,6 +80,32 @@ cmake -S . -B build-default -DCMAKE_BUILD_TYPE=Debug
 cmake --build build-default -j
 ```
 
+Preset-based builds:
+
+```bash
+cmake --preset dev-debug
+cmake --build --preset dev-debug
+
+cmake --preset sanitizer-debug
+cmake --build --preset sanitizer-debug
+```
+
+Run tests:
+
+```bash
+ctest --preset dev-debug
+# or
+ctest --preset sanitizer-debug
+```
+
+Current smoke test:
+- `project_serializer_smoke` validates save/load roundtrip for cues, calibration, and app config.
+
+## Repro Workflow
+
+- Use the bug report form at `/Users/liammarincik/projects/liams-projects/videoplayerforme/.github/ISSUE_TEMPLATE/bug_repro.yml` when filing issues.
+- Follow `/Users/liammarincik/projects/liams-projects/videoplayerforme/docs/repro-checklist.md` to gather reproducible steps, environment details, and validation command output.
+
 ## Run
 
 macOS bundle executable:
@@ -85,6 +125,8 @@ Supported addresses:
 - `/cue/take`
 - `/cue/stop_all`
 - `/timecode <HH:MM:SS:FF>`
+- `/dmx <channel> <value>`
+- `/text <message>` (empty to clear)
 
 Text-command fallback (non-binary OSC datagrams) is also accepted:
 - `play 3`
@@ -93,6 +135,8 @@ Text-command fallback (non-binary OSC datagrams) is also accepted:
 - `take`
 - `stopall`
 - `timecode 01:00:00:00`
+- `dmx 1 255`
+- `text Live lyrics`
 
 ## Hotkeys
 

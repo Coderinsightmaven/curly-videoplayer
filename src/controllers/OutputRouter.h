@@ -24,6 +24,7 @@ class OutputRouter : public QObject {
   bool preloadCue(const Cue& cue);
   bool takePreview(TransitionStyle style, int durationMs);
   Cue lastPreviewCue() const;
+  void stopCue(const Cue& cue);
 
   void stopLayer(int screenIndex, int layer);
   void stopAll();
@@ -31,6 +32,7 @@ class OutputRouter : public QObject {
   void hideOutputs();
   void showPreview();
   void hidePreview();
+  void setOverlayText(const QString& text);
 
   void setOutputCalibration(int screenIndex, const OutputCalibration& calibration);
   void clearCalibrations();
@@ -53,4 +55,5 @@ class OutputRouter : public QObject {
   Cue previewCue_;
   QMap<int, OutputCalibration> calibrations_;
   QString fallbackSlatePath_;
+  QString overlayText_;
 };

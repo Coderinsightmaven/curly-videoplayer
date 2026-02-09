@@ -1,39 +1,94 @@
 #include "project/ProjectSerializer.h"
 
+#include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 
 namespace {
 
-QJsonObject cueToJson(const Cue& cue) {
+bool isLikelyUrl(const QString& path) { return path.contains("://"); }
+
+QString toPortablePath(const QString& path, const QDir& baseDir, bool useRelative) {
+  if (path.isEmpty() || isLikelyUrl(path)) {
+    return path;
+  }
+
+  QFileInfo fileInfo(path);
+  const QString absolute = fileInfo.isAbsolute() ? fileInfo.absoluteFilePath() : baseDir.absoluteFilePath(path);
+  if (!useRelative) {
+    return QDir::cleanPath(absolute);
+  }
+
+  return QDir::cleanPath(baseDir.relativeFilePath(absolute));
+}
+
+QString toAbsolutePath(const QString& path, const QDir& baseDir) {
+  if (path.isEmpty() || isLikelyUrl(path)) {
+    return path;
+  }
+
+  QFileInfo fileInfo(path);
+  if (fileInfo.isAbsolute()) {
+    return QDir::cleanPath(fileInfo.absoluteFilePath());
+  }
+
+  return QDir::cleanPath(baseDir.absoluteFilePath(path));
+}
+
+QJsonObject cueToJson(const Cue& cue, const QDir& baseDir, bool useRelativeMediaPaths) {
   QJsonObject object;
   object.insert("id", cue.id);
   object.insert("name", cue.name);
-  object.insert("filePath", cue.filePath);
+  object.insert("filePath", toPortablePath(cue.filePath, baseDir, useRelativeMediaPaths));
   object.insert("targetScreen", cue.targetScreen);
+  object.insert("targetSetId", cue.targetSetId);
   object.insert("layer", cue.layer);
   object.insert("loop", cue.loop);
   object.insert("hotkey", cue.hotkey);
   object.insert("timecodeTrigger", cue.timecodeTrigger);
   object.insert("midiNote", cue.midiNote);
+  object.insert("dmxChannel", cue.dmxChannel);
+  object.insert("dmxValue", cue.dmxValue);
   object.insert("preload", cue.preload);
+  object.insert("isLiveInput", cue.isLiveInput);
+  object.insert("liveInputUrl", cue.liveInputUrl);
+  object.insert("videoFilter", cue.videoFilter);
+  object.insert("useTransitionOverride", cue.useTransitionOverride);
+  object.insert("transitionStyle", transitionStyleToString(cue.transitionStyle));
+  object.insert("transitionDurationMs", cue.transitionDurationMs);
+  object.insert("autoFollow", cue.autoFollow);
+  object.insert("followCueRow", cue.followCueRow);
+  object.insert("followDelayMs", cue.followDelayMs);
   return object;
 }
 
-Cue cueFromJson(const QJsonObject& object) {
+Cue cueFromJson(const QJsonObject& object, const QDir& baseDir) {
   Cue cue;
   cue.id = object.value("id").toString();
   cue.name = object.value("name").toString();
-  cue.filePath = object.value("filePath").toString();
+  cue.filePath = toAbsolutePath(object.value("filePath").toString(), baseDir);
   cue.targetScreen = object.value("targetScreen").toInt();
+  cue.targetSetId = object.value("targetSetId").toString();
   cue.layer = object.value("layer").toInt();
   cue.loop = object.value("loop").toBool();
   cue.hotkey = object.value("hotkey").toString();
   cue.timecodeTrigger = object.value("timecodeTrigger").toString();
   cue.midiNote = object.value("midiNote").toInt(-1);
+  cue.dmxChannel = object.value("dmxChannel").toInt(-1);
+  cue.dmxValue = object.value("dmxValue").toInt(255);
   cue.preload = object.value("preload").toBool(false);
+  cue.isLiveInput = object.value("isLiveInput").toBool(false);
+  cue.liveInputUrl = object.value("liveInputUrl").toString();
+  cue.videoFilter = object.value("videoFilter").toString();
+  cue.useTransitionOverride = object.value("useTransitionOverride").toBool(false);
+  cue.transitionStyle = transitionStyleFromString(object.value("transitionStyle").toString("fade"));
+  cue.transitionDurationMs = object.value("transitionDurationMs").toInt(600);
+  cue.autoFollow = object.value("autoFollow").toBool(false);
+  cue.followCueRow = object.value("followCueRow").toInt(-1);
+  cue.followDelayMs = object.value("followDelayMs").toInt(0);
   return cue;
 }
 
@@ -54,31 +109,43 @@ OutputCalibration calibrationFromJson(const QJsonObject& object) {
   return calibration;
 }
 
-QJsonObject configToJson(const AppConfig& config) {
+QJsonObject configToJson(const AppConfig& config, const QDir& baseDir) {
   QJsonObject object;
   object.insert("oscPort", config.oscPort);
   object.insert("transitionDurationMs", config.transitionDurationMs);
   object.insert("transitionStyle", transitionStyleToString(config.transitionStyle));
-  object.insert("fallbackSlatePath", config.fallbackSlatePath);
+  object.insert("fallbackSlatePath", toPortablePath(config.fallbackSlatePath, baseDir, config.useRelativeMediaPaths));
+  object.insert("useRelativeMediaPaths", config.useRelativeMediaPaths);
   object.insert("midiEnabled", config.midiEnabled);
   object.insert("ndiEnabled", config.ndiEnabled);
+  object.insert("backupTriggerEnabled", config.backupTriggerEnabled);
+  object.insert("backupTriggerUrl", config.backupTriggerUrl);
+  object.insert("backupTriggerToken", config.backupTriggerToken);
+  object.insert("backupTriggerTimeoutMs", config.backupTriggerTimeoutMs);
   return object;
 }
 
-AppConfig configFromJson(const QJsonObject& object) {
+AppConfig configFromJson(const QJsonObject& object, const QDir& baseDir) {
   AppConfig config;
   config.oscPort = object.value("oscPort").toInt(9000);
   config.transitionDurationMs = object.value("transitionDurationMs").toInt(600);
   config.transitionStyle = transitionStyleFromString(object.value("transitionStyle").toString("fade"));
-  config.fallbackSlatePath = object.value("fallbackSlatePath").toString();
+  config.useRelativeMediaPaths = object.value("useRelativeMediaPaths").toBool(true);
+  config.fallbackSlatePath = toAbsolutePath(object.value("fallbackSlatePath").toString(), baseDir);
   config.midiEnabled = object.value("midiEnabled").toBool(true);
   config.ndiEnabled = object.value("ndiEnabled").toBool(false);
+  config.backupTriggerEnabled = object.value("backupTriggerEnabled").toBool(false);
+  config.backupTriggerUrl = object.value("backupTriggerUrl").toString();
+  config.backupTriggerToken = object.value("backupTriggerToken").toString();
+  config.backupTriggerTimeoutMs = object.value("backupTriggerTimeoutMs").toInt(1500);
   return config;
 }
 
 }  // namespace
 
 bool ProjectSerializer::save(const QString& filePath, const ProjectData& project, QString* errorMessage) {
+  const QDir baseDir = QFileInfo(filePath).absoluteDir();
+
   QFile file(filePath);
   if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
     if (errorMessage != nullptr) {
@@ -89,11 +156,11 @@ bool ProjectSerializer::save(const QString& filePath, const ProjectData& project
 
   QJsonObject root;
   root.insert("version", 1);
-  root.insert("config", configToJson(project.config));
+  root.insert("config", configToJson(project.config, baseDir));
 
   QJsonArray cues;
   for (const Cue& cue : project.cues) {
-    cues.push_back(cueToJson(cue));
+    cues.push_back(cueToJson(cue, baseDir, project.config.useRelativeMediaPaths));
   }
   root.insert("cues", cues);
 
@@ -153,9 +220,10 @@ bool ProjectSerializer::load(const QString& filePath, ProjectData* project, QStr
   }
 
   const QJsonObject root = document.object();
+  const QDir baseDir = QFileInfo(filePath).absoluteDir();
 
   ProjectData loaded;
-  loaded.config = configFromJson(root.value("config").toObject());
+  loaded.config = configFromJson(root.value("config").toObject(), baseDir);
 
   const QJsonArray cuesArray = root.value("cues").toArray();
   loaded.cues.reserve(cuesArray.size());
@@ -163,7 +231,7 @@ bool ProjectSerializer::load(const QString& filePath, ProjectData* project, QStr
     if (!value.isObject()) {
       continue;
     }
-    loaded.cues.push_back(cueFromJson(value.toObject()));
+    loaded.cues.push_back(cueFromJson(value.toObject(), baseDir));
   }
 
   const QJsonArray calibrationArray = root.value("calibrations").toArray();

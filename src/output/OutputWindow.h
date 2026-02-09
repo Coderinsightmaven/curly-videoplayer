@@ -29,6 +29,7 @@ class OutputWindow : public QWidget {
   OutputCalibration calibration() const;
 
   void setFallbackSlatePath(const QString& path);
+  void setOverlayText(const QString& text);
 
  signals:
   void playbackError(const QString& message);
@@ -46,6 +47,7 @@ class OutputWindow : public QWidget {
   QWidget* fadeOverlay_;
   QGraphicsOpacityEffect* fadeEffect_;
   QLabel* slateLabel_;
+  QLabel* overlayLabel_;
   OutputCalibration calibration_;
   QString fallbackSlatePath_;
 };

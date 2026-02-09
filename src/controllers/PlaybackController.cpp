@@ -1,5 +1,9 @@
 #include "controllers/PlaybackController.h"
 
+#include <QRegularExpression>
+#include <QTimer>
+#include <QtGlobal>
+
 #include "controllers/OutputRouter.h"
 #include "core/CueListModel.h"
 
@@ -18,18 +22,23 @@ bool PlaybackController::playCueAtRow(int row, TransitionStyle style, int durati
   }
 
   const Cue cue = cueModel_->cueAt(row);
-  if (cue.filePath.isEmpty()) {
+  if (cue.filePath.isEmpty() && (!cue.isLiveInput || cue.liveInputUrl.trimmed().isEmpty())) {
     emit playbackError(QString("Cue '%1' has no media file.").arg(cue.name));
     return false;
   }
 
-  const bool ok = outputRouter_->routeCue(cue, style, durationMs);
+  const TransitionStyle effectiveStyle = cue.useTransitionOverride ? cue.transitionStyle : style;
+  const int effectiveDuration = cue.useTransitionOverride ? cue.transitionDurationMs : durationMs;
+
+  const bool ok = outputRouter_->routeCue(cue, effectiveStyle, effectiveDuration);
   if (!ok) {
     emit playbackError(QString("Failed to route cue '%1'.").arg(cue.name));
     return false;
   }
 
   emit playbackStatus(QString("Live: '%1'").arg(cue.name));
+  emit cueWentLive(cue);
+  scheduleFollowCue(cue, effectiveStyle, effectiveDuration);
   return true;
 }
 
@@ -45,7 +54,7 @@ bool PlaybackController::previewCueAtRow(int row) {
   }
 
   const Cue cue = cueModel_->cueAt(row);
-  if (cue.filePath.isEmpty()) {
+  if (cue.filePath.isEmpty() && (!cue.isLiveInput || cue.liveInputUrl.trimmed().isEmpty())) {
     emit playbackError(QString("Cue '%1' has no media file.").arg(cue.name));
     return false;
   }
@@ -72,7 +81,7 @@ bool PlaybackController::preloadCueAtRow(int row) {
   }
 
   const Cue cue = cueModel_->cueAt(row);
-  if (cue.filePath.isEmpty()) {
+  if (cue.filePath.isEmpty() && (!cue.isLiveInput || cue.liveInputUrl.trimmed().isEmpty())) {
     emit playbackError(QString("Cue '%1' has no media file.").arg(cue.name));
     return false;
   }
@@ -93,14 +102,19 @@ bool PlaybackController::takePreviewCue(TransitionStyle style, int durationMs) {
     return false;
   }
 
-  const bool ok = outputRouter_->takePreview(style, durationMs);
+  const Cue previewCue = outputRouter_->lastPreviewCue();
+  const TransitionStyle effectiveStyle = previewCue.useTransitionOverride ? previewCue.transitionStyle : style;
+  const int effectiveDuration = previewCue.useTransitionOverride ? previewCue.transitionDurationMs : durationMs;
+
+  const bool ok = outputRouter_->takePreview(effectiveStyle, effectiveDuration);
   if (!ok) {
     emit playbackError("Failed to take preview live.");
     return false;
   }
 
-  const Cue previewCue = outputRouter_->lastPreviewCue();
   emit playbackStatus(QString("Taken live: '%1'").arg(previewCue.name));
+  emit cueWentLive(previewCue);
+  scheduleFollowCue(previewCue, effectiveStyle, effectiveDuration);
   return true;
 }
 
@@ -123,6 +137,11 @@ bool PlaybackController::triggerByTimecode(const QString& timecode, TransitionSt
     return false;
   }
 
+  const QString normalizedTimecode = normalizeTimecode(timecode);
+  if (normalizedTimecode.isEmpty()) {
+    return false;
+  }
+
   bool triggered = false;
 
   const QVector<Cue> cues = cueModel_->cues();
@@ -131,15 +150,19 @@ bool PlaybackController::triggerByTimecode(const QString& timecode, TransitionSt
       continue;
     }
 
-    if (cue.timecodeTrigger.compare(timecode, Qt::CaseInsensitive) == 0) {
+    if (cueMatchesTimecode(cue.timecodeTrigger, normalizedTimecode)) {
       const QString last = lastTimecodeByCueId_.value(cue.id);
-      if (last == timecode) {
+      if (last == normalizedTimecode) {
         continue;
       }
 
-      if (outputRouter_->routeCue(cue, style, durationMs)) {
-        lastTimecodeByCueId_.insert(cue.id, timecode);
-        emit playbackStatus(QString("Timecode %1 -> '%2'").arg(timecode).arg(cue.name));
+      const TransitionStyle effectiveStyle = cue.useTransitionOverride ? cue.transitionStyle : style;
+      const int effectiveDuration = cue.useTransitionOverride ? cue.transitionDurationMs : durationMs;
+      if (outputRouter_->routeCue(cue, effectiveStyle, effectiveDuration)) {
+        lastTimecodeByCueId_.insert(cue.id, normalizedTimecode);
+        emit playbackStatus(QString("Timecode %1 -> '%2'").arg(normalizedTimecode).arg(cue.name));
+        emit cueWentLive(cue);
+        scheduleFollowCue(cue, effectiveStyle, effectiveDuration);
         triggered = true;
       }
     } else {
@@ -156,7 +179,7 @@ void PlaybackController::stopCueAtRow(int row) {
   }
 
   const Cue cue = cueModel_->cueAt(row);
-  outputRouter_->stopLayer(cue.targetScreen, cue.layer);
+  outputRouter_->stopCue(cue);
 }
 
 void PlaybackController::stopAll() {
@@ -164,4 +187,78 @@ void PlaybackController::stopAll() {
     return;
   }
   outputRouter_->stopAll();
+}
+
+QString PlaybackController::normalizeTimecode(const QString& rawTimecode) {
+  const QString trimmed = rawTimecode.trimmed();
+  if (trimmed.isEmpty()) {
+    return {};
+  }
+
+  QRegularExpression fullPattern(R"(^(\d{1,2}):(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?$)");
+  QRegularExpressionMatch match = fullPattern.match(trimmed);
+  if (!match.hasMatch()) {
+    return {};
+  }
+
+  const int hour = match.captured(1).toInt();
+  const int minute = match.captured(2).toInt();
+  const int second = match.captured(3).toInt();
+  const int frame = match.captured(4).isEmpty() ? 0 : match.captured(4).toInt();
+
+  return QString("%1:%2:%3:%4")
+      .arg(hour, 2, 10, QChar('0'))
+      .arg(minute, 2, 10, QChar('0'))
+      .arg(second, 2, 10, QChar('0'))
+      .arg(frame, 2, 10, QChar('0'));
+}
+
+bool PlaybackController::cueMatchesTimecode(const QString& cueTrigger, const QString& normalizedTimecode) {
+  const QString normalizedTrigger = cueTrigger.trimmed().toLower();
+  if (normalizedTrigger.isEmpty()) {
+    return false;
+  }
+
+  if (!normalizedTrigger.contains('*')) {
+    return normalizeTimecode(normalizedTrigger) == normalizedTimecode;
+  }
+
+  const QStringList triggerParts = normalizedTrigger.split(':');
+  const QStringList incomingParts = normalizedTimecode.toLower().split(':');
+  if (triggerParts.size() != 4 || incomingParts.size() != 4) {
+    return false;
+  }
+
+  for (int i = 0; i < 4; ++i) {
+    if (triggerParts.at(i) == "*") {
+      continue;
+    }
+
+    bool ok = false;
+    const int expectedValue = triggerParts.at(i).toInt(&ok);
+    if (!ok) {
+      return false;
+    }
+
+    const QString expected = QString("%1").arg(expectedValue, 2, 10, QChar('0'));
+    if (expected != incomingParts.at(i)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+void PlaybackController::scheduleFollowCue(const Cue& cue, TransitionStyle style, int durationMs) {
+  if (cueModel_ == nullptr || !cue.autoFollow) {
+    return;
+  }
+
+  const int followRow = cue.followCueRow >= 0 ? cue.followCueRow : cueModel_->rowForCueId(cue.id) + 1;
+  if (!cueModel_->isValidRow(followRow)) {
+    return;
+  }
+
+  const int delayMs = qMax(0, cue.followDelayMs);
+  QTimer::singleShot(delayMs, this, [this, followRow, style, durationMs]() { playCueAtRow(followRow, style, durationMs); });
 }
