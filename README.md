@@ -1,0 +1,150 @@
+# VideoPlayerForMe
+
+Cross-platform Qt/C++ show-control video app inspired by ProVideoPlayer workflows.
+
+## Implemented Feature Set
+
+- Cue list with metadata:
+  - target screen
+  - layer
+  - loop
+  - preload flag
+  - hotkey
+  - timecode trigger
+  - MIDI note mapping
+- Program output engine:
+  - multi-screen full-screen outputs
+  - per-screen layered playback
+  - transitions (`Cut`, `Fade`, `Dip To Black`)
+  - per-screen edge blend + keystone controls
+  - fallback slate on errors/stopped state
+- Preview/program workflow:
+  - preview window
+  - `Take` to program with selected transition
+- Project persistence:
+  - save/load `.show` (JSON structure)
+  - cues, transition settings, control config, calibrations
+- Control inputs:
+  - OSC UDP server
+  - MIDI input (optional RtMidi build)
+  - timecode trigger routing (from OSC `/timecode` or MIDI MTC quarter-frame)
+- Optional NDI hook:
+  - compile-time abstraction with SDK detection
+- Packaging/deployment baseline:
+  - CPack config for macOS DMG and Windows ZIP/NSIS
+
+## Dependencies
+
+Required:
+- CMake `>= 3.21`
+- Qt 6 (`Core`, `Gui`, `Widgets`, `Network`)
+- `libmpv`
+
+Optional:
+- RtMidi (`HAVE_RTMIDI`) for direct MIDI input
+- NewTek NDI SDK (`HAVE_NDI_SDK`) for NDI initialization path
+
+### macOS (Homebrew)
+
+```bash
+brew install cmake qt mpv pkg-config
+# optional
+brew install rtmidi
+```
+
+### Windows (suggested)
+
+- Install Qt 6 via Qt Maintenance Tool.
+- Install mpv dev package (or use `vcpkg` + CMake toolchain).
+- Optional: install/build RtMidi and NDI SDK.
+- For signed releases, install Windows SDK `signtool.exe` and import your signing cert.
+
+## Build
+
+```bash
+cmake -S . -B build-default -DCMAKE_BUILD_TYPE=Debug
+cmake --build build-default -j
+```
+
+## Run
+
+macOS bundle executable:
+
+```bash
+./build-default/VideoPlayerForMe.app/Contents/MacOS/VideoPlayerForMe
+```
+
+## OSC Commands
+
+Server listens on configured UDP port (default `9000`).
+
+Supported addresses:
+- `/cue/play <row>`
+- `/cue/preview <row>`
+- `/cue/preload <row>`
+- `/cue/take`
+- `/cue/stop_all`
+- `/timecode <HH:MM:SS:FF>`
+
+Text-command fallback (non-binary OSC datagrams) is also accepted:
+- `play 3`
+- `preview 3`
+- `preload 3`
+- `take`
+- `stopall`
+- `timecode 01:00:00:00`
+
+## Hotkeys
+
+- `Space`: preview selected cue
+- `Enter`: take preview live
+- `G`: play selected cue live
+- `Ctrl+L`: preload selected cue
+- `S`: stop selected layer
+- `Shift+S`: stop all
+- `Up/Down`: selection
+- `1..9`: preview cue row 0..8
+- `Shift+1..9`: play cue row 0..8 live
+- Cue-specific hotkeys can be set in cue properties.
+
+## Package
+
+```bash
+cmake --build build-default --target package
+```
+
+Generated artifacts depend on OS and installed packaging tools.
+
+## Windows Release Pipeline
+
+Use the PowerShell automation in `/Users/liammarincik/projects/liams-projects/videoplayerforme/packaging/windows`.
+
+Unsigned build/package example:
+
+```powershell
+pwsh -ExecutionPolicy Bypass -File packaging/windows/build-windows-release.ps1 `
+  -SourceDir . `
+  -BuildDir build-win `
+  -InstallDir build-win/install `
+  -Generator Ninja `
+  -QtPrefixPath "C:/Qt/6.8.2/msvc2022_64" `
+  -MpvRuntimeDll "C:/mpv/mpv-2.dll"
+```
+
+Signed build/package example:
+
+```powershell
+$env:SIGNTOOL_PATH = "C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x64/signtool.exe"
+$env:SIGN_CERT_THUMBPRINT = "<YOUR_CERT_THUMBPRINT>"
+
+pwsh -ExecutionPolicy Bypass -File packaging/windows/build-windows-release.ps1 `
+  -SourceDir . `
+  -BuildDir build-win `
+  -InstallDir build-win/install `
+  -Generator Ninja `
+  -QtPrefixPath "C:/Qt/6.8.2/msvc2022_64" `
+  -MpvRuntimeDll "C:/mpv/mpv-2.dll" `
+  -EnableSigning
+```
+
+See `/Users/liammarincik/projects/liams-projects/videoplayerforme/packaging/windows/README.md` for details.

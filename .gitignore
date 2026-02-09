@@ -1,0 +1,14 @@
+build/
+build-default/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+CPackConfig.cmake
+CPackSourceConfig.cmake
+_CPack_Packages/
+*.dmg
+*.zip
+*.exe
+*.user
+.DS_Store
